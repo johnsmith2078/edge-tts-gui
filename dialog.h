@@ -2,9 +2,6 @@
 #define DIALOG_H
 
 #include <QDialog>
-#include <QThread>
-#include <QProcess>
-#include <string>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -37,24 +34,7 @@ private slots:
 
 private:
     Ui::Dialog *ui;
-    std::wstring voice = L"zh-CN-XiaoxiaoNeural";
+    QString voice = "zh-CN, XiaoyiNeural";
 }; // class Dialog
-
-class CommandRunner : public QThread
-{
-    Q_OBJECT
-
-public:
-    CommandRunner(std::wstring command, QObject *parent = nullptr)
-        : QThread(parent), cmd(std::move(command)) {}
-
-protected:
-    void run() override {
-        _wsystem(cmd.c_str());
-    }
-
-private:
-    std::wstring cmd;
-}; // class CommandRunner
 
 #endif // DIALOG_H
