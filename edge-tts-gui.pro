@@ -20,6 +20,8 @@ HEADERS += \
 FORMS += \
     dialog.ui
 
+DEFINES += QT_NO_DEBUG_OUTPUT
+
 RC_ICONS = favicon.ico
 
 # Default rules for deployment.
