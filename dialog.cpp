@@ -7,7 +7,8 @@ Dialog::Dialog(QWidget *parent)
     , ui(new Ui::Dialog)
 {
     ui->setupUi(this);
-    ui->radioButtonXiaoyi->setChecked(true);
+    Communicate *comm = new Communicate("");
+    comm->start();
 }
 
 Dialog::~Dialog()
@@ -17,16 +18,63 @@ Dialog::~Dialog()
 
 void Dialog::on_pushButtonPlay_clicked()
 {
-    QString text = ui->plainTextEditContent->toPlainText(); // 获取QPlainTextEdit中的文本
+    QString text = ui->plainTextEditContent->toPlainText();
     if (text.isEmpty()) {
         return;
     }
 
     ui->pushButtonPlay->setDisabled(true);
-
+    ui->pushButtonPlay->setText("⏳合成中...");
+    ui->pushButtonStop->setEnabled(true);
     Communicate *comm = new Communicate(text, voice);
-    connect(comm, &Communicate::finished, [=]() {
+    connect(comm, &Communicate::finished, [&]() {
         ui->pushButtonPlay->setDisabled(false);
+        ui->pushButtonPlay->setText("▶️ 播放");
+        ui->pushButtonStop->setEnabled(false);
+    });
+    // connect this->stop() to comm->stop()
+    connect(this, &Dialog::stop, comm, &Communicate::stop);
+    comm->start();
+}
+
+void Dialog::on_pushButtonStop_clicked()
+{
+    emit stop();
+}
+
+void Dialog::on_pushButtonSave_clicked()
+{
+    QString text = ui->plainTextEditContent->toPlainText();
+    if (text.isEmpty()) {
+        return;
+    }
+
+    QString dir;
+    if (lastDir.isEmpty()) {
+        dir = QDir::currentPath();
+    } else {
+        dir = lastDir;
+    }
+
+    QString fileName = QFileDialog::getSaveFileName(
+        this, // 父窗口
+        "保存音频文件", // 对话框标题
+        dir, // 默认文件路径
+        "音频文件 (*.mp3)" // 文件过滤器
+    );
+
+    if (fileName.isEmpty()) {
+        return;
+    }
+
+    lastDir = fileName;
+
+    ui->pushButtonSave->setDisabled(true);
+
+    Communicate *comm = new Communicate(text, voice, fileName);
+
+    connect(comm, &Communicate::saveFinished, [&]() {
+        ui->pushButtonSave->setDisabled(false);
     });
     comm->start();
 }
@@ -78,4 +126,3 @@ void Dialog::on_radioButtonYunyang_clicked(bool checked)
         voice = "zh-CN, YunyangNeural";
     }
 }
-

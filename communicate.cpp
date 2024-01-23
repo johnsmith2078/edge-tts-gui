@@ -1,17 +1,18 @@
 #include "communicate.h"
 
-Communicate::Communicate(QString text, QString voice, QObject *parent)
+Communicate::Communicate(QString text, QString voice, QString fileName, QObject *parent)
     : QObject(parent)
     , m_text(escape(remove_incompatible_characters(text)))
     , m_voice(QString("Microsoft Server Speech Text to Speech Voice (%1)").arg(voice))
+    , m_fileName(fileName)
 {
-    // this->text = escape(remove_incompatible_characters(text));
-    // qDebug() << this->text;
     m_webSocket = new QWebSocket();
     connect(m_webSocket, &QWebSocket::connected, this, &Communicate::onConnected);
     connect(m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
     connect(m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
     connect(m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
+    // connect this->finished() to this->delete_tmp()
+    connect(this, &Communicate::finished, this, &Communicate::delete_tmp);
 }
 
 Communicate::~Communicate() {
@@ -92,7 +93,43 @@ void Communicate::onTextMessageReceived(const QString &message) {
     }
 }
 
+void Communicate::save() {
+    QFile file(m_fileName);
+    if (!file.open(QIODevice::WriteOnly)) {
+        throw std::runtime_error("Could not open file to write audio.");
+    }
+    file.write(m_audioDataReceived);
+    file.close();
+
+    QSystemTrayIcon *trayIcon = new QSystemTrayIcon(this);
+    trayIcon->setIcon(QIcon("icon.png")); // 设置图标
+    trayIcon->show(); // 显示托盘图标
+
+    // 显示通知
+    trayIcon->showMessage("保存成功", "文件已保存到 " + m_fileName, QSystemTrayIcon::Information, 10000);
+
+    // open directory of m_fileName, not file itself
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_fileName).absolutePath()));
+
+
+}
+
+void Communicate::delete_tmp()
+{
+    // delete m_audioFile if it exists
+    if (QFile::exists(m_audioFile)) {
+        QFile::remove(m_audioFile);
+    }
+}
+
 void Communicate::onDisconnected() {
+    if (!m_fileName.isEmpty()) {
+        save();
+        emit saveFinished();
+        this->~Communicate();
+        return;
+    }
+
     // Handle disconnection
     QFile file(m_audioFile);
     if (!file.open(QIODevice::WriteOnly)) {
@@ -108,13 +145,21 @@ void Communicate::onDisconnected() {
     QObject::connect(player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
             emit finished();
+            this->~Communicate();
         }
+    });
+
+    // connect this->stop() to player->stop() and emit finished()
+    QObject::connect(this, &Communicate::stop, player, &QMediaPlayer::stop);
+
+    QObject::connect(this, &Communicate::stop, [&]() {
+        emit finished();
+        this->~Communicate();
     });
 
     player->setSource(QUrl::fromLocalFile(m_audioFile));
     audioOutput->setVolume(50);
     player->play();
-
 }
 
 // Utility functions

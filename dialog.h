@@ -2,6 +2,8 @@
 #define DIALOG_H
 
 #include <QDialog>
+#include <QThread>
+#include <QFileDialog>
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -16,6 +18,9 @@ class Dialog : public QDialog
 public:
     Dialog(QWidget *parent = nullptr);
     ~Dialog();
+
+signals:
+    void stop();
 
 private slots:
     void on_pushButtonPlay_clicked();
@@ -32,9 +37,14 @@ private slots:
 
     void on_radioButtonYunyang_clicked(bool checked);
 
+    void on_pushButtonStop_clicked();
+
+    void on_pushButtonSave_clicked();
+
 private:
     Ui::Dialog *ui;
     QString voice = "zh-CN, XiaoyiNeural";
+    QString lastDir = "";
 }; // class Dialog
 
 #endif // DIALOG_H

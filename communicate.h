@@ -1,9 +1,14 @@
 #ifndef COMMUNICATE_H
 #define COMMUNICATE_H
 
+#include <QDir>
 #include <QUuid>
 #include <QFile>
+#include <QFileInfo>
+#include <QProcess>
 #include <QWebSocket>
+#include <QSystemTrayIcon>
+#include <QDesktopServices>
 #include <QtMultimedia/QMediaPlayer>
 #include <QtMultimedia/QAudioOutput>
 
@@ -24,11 +29,15 @@ class Communicate : public QObject
     Q_OBJECT
 
 public:
-    Communicate(QString text, QString voice = "zh-CN, XiaoyiNeural", QObject *parent = nullptr);
+    Communicate(QString text, QString voice = "zh-CN, XiaoyiNeural", QString fileName = "", QObject *parent = nullptr);
 
     ~Communicate();
 
     void start();
+
+    void save();
+
+    void delete_tmp();
 
 private slots:
     void onConnected();
@@ -42,13 +51,18 @@ private slots:
 signals:
     void finished();
 
+    void stop();
+
+    void saveFinished();
+
 private:
     QString m_text;
     QString m_voice;
+    QString m_fileName;
     QString m_rate = "+0%";
     QString m_volume = "+0%";
     QString m_pitch = "+0Hz";
-    QWebSocket *m_webSocket;
+    QWebSocket *m_webSocket = nullptr;
     QByteArray m_audioDataReceived = "";
     QString m_audioFile = "audio.mp3";
     bool m_downloadAudio = false;
@@ -68,6 +82,8 @@ private:
     QString ssml_headers_plus_data(const QString& requestId, const QString& timestamp, const QString& ssml);
 
     QPair<QMap<QString, QString>, QString> get_headers_and_data(const QString& message);
+
+    void showInFolder(const QString& path);
 };
 
 #endif // COMMUNICATE_H
