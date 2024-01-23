@@ -43,15 +43,15 @@ signals:
     void finished();
 
 private:
-    QString text;
-    QString voice;
-    QString rate = "+0%";
-    QString volume = "+0%";
-    QString pitch = "+0Hz";
-    QWebSocket *webSocket;
-    QByteArray audioDataReceived = "";
-    QString audioFile = "audio.mp3";
-    bool downloadAudio = false;
+    QString m_text;
+    QString m_voice;
+    QString m_rate = "+0%";
+    QString m_volume = "+0%";
+    QString m_pitch = "+0Hz";
+    QWebSocket *m_webSocket;
+    QByteArray m_audioDataReceived = "";
+    QString m_audioFile = "audio.mp3";
+    bool m_downloadAudio = false;
 
 private:
     // Utility functions

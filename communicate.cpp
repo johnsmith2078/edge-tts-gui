@@ -1,19 +1,21 @@
 #include "communicate.h"
 
 Communicate::Communicate(QString text, QString voice, QObject *parent)
-    : QObject(parent), text(text)
-    , voice(QString("Microsoft Server Speech Text to Speech Voice (%1)").arg(voice))
+    : QObject(parent)
+    , m_text(escape(remove_incompatible_characters(text)))
+    , m_voice(QString("Microsoft Server Speech Text to Speech Voice (%1)").arg(voice))
 {
-    text = escape(remove_incompatible_characters(text));
-    webSocket = new QWebSocket();
-    connect(webSocket, &QWebSocket::connected, this, &Communicate::onConnected);
-    connect(webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
-    connect(webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
-    connect(webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
+    // this->text = escape(remove_incompatible_characters(text));
+    // qDebug() << this->text;
+    m_webSocket = new QWebSocket();
+    connect(m_webSocket, &QWebSocket::connected, this, &Communicate::onConnected);
+    connect(m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
+    connect(m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
+    connect(m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
 }
 
 Communicate::~Communicate() {
-    delete webSocket;
+    delete m_webSocket;
 }
 
 void Communicate::start() {
@@ -29,12 +31,12 @@ void Communicate::start() {
     request.setRawHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41");
 
     // Open WebSocket connection
-    webSocket->open(request);
+    m_webSocket->open(request);
 }
 
 void Communicate::onConnected() {
     QString date = date_to_string();
-    QString ssml = mkssml(text, voice, rate, volume, pitch);
+    QString ssml = mkssml(m_text, m_voice, m_rate, m_volume, m_pitch);
 
     QString headersAndData =
         "X-Timestamp:" + date + "\r\n"
@@ -46,12 +48,12 @@ void Communicate::onConnected() {
 
     QString ssmlAndData = ssml_headers_plus_data( connect_id(), date, ssml );
 
-    webSocket->sendTextMessage(headersAndData);
-    webSocket->sendTextMessage(ssmlAndData);
+    m_webSocket->sendTextMessage(headersAndData);
+    m_webSocket->sendTextMessage(ssmlAndData);
 }
 
 void Communicate::onBinaryMessageReceived(const QByteArray &message) {
-    if (!downloadAudio) {
+    if (!m_downloadAudio) {
         throw std::runtime_error("We received a binary message, but we are not expecting one.");
     }
 
@@ -68,18 +70,18 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     QByteArray audioData = message.mid(headerLength + 2);
     // Emit a signal or do something with the audio data
     // emit audioDataReceived({"audio", audioData});
-    audioDataReceived += audioData;
+    m_audioDataReceived += audioData;
 }
 
 void Communicate::onTextMessageReceived(const QString &message) {
     auto [parameters, data] = get_headers_and_data(message);
     auto path = parameters.value("Path");
     if (path == "turn.start") {
-        downloadAudio = true;
+        m_downloadAudio = true;
     } else if (path == "turn.end") {
-        downloadAudio = false;
+        m_downloadAudio = false;
         // End of audio data
-        webSocket->close();
+        m_webSocket->close();
         return;
     } else if (path == "audio.metadata") {
         // pass
@@ -92,11 +94,11 @@ void Communicate::onTextMessageReceived(const QString &message) {
 
 void Communicate::onDisconnected() {
     // Handle disconnection
-    QFile file(audioFile);
+    QFile file(m_audioFile);
     if (!file.open(QIODevice::WriteOnly)) {
         throw std::runtime_error("Could not open file to write audio.");
     }
-    file.write(audioDataReceived);
+    file.write(m_audioDataReceived);
     file.close();
 
     auto player = new QMediaPlayer;
@@ -109,7 +111,7 @@ void Communicate::onDisconnected() {
         }
     });
 
-    player->setSource(QUrl::fromLocalFile(audioFile));
+    player->setSource(QUrl::fromLocalFile(m_audioFile));
     audioOutput->setVolume(50);
     player->play();
 
@@ -125,9 +127,9 @@ QString Communicate::date_to_string() {
 }
 
 QString Communicate::escape(QString data) {
-    data.replace("&", "&amp;");
-    data.replace(">", "&gt;");
-    data.replace("<", "&lt;");
+    data.replace('&', ' ');
+    data.replace('>', ' ');
+    data.replace('<', ' ');
     return data;
 }
 
@@ -135,7 +137,7 @@ QString Communicate::remove_incompatible_characters(QString str) {
     for (int i = 0; i < str.size(); ++i) {
         QChar ch = str.at(i);
         int code = ch.unicode();
-        if ((0 <= code && code <= 8) || (11 <= code && code <= 12) || (14 <= code && code <= 31)) {
+        if ((0 <= code && code <= 8) || (10 <= code && code <= 31)) {
             str.replace(i, 1, ' ');
         }
     }
