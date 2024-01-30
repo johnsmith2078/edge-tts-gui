@@ -1,23 +1,33 @@
 #include "communicate.h"
 
-Communicate::Communicate(QString text, QString voice, QString fileName, QObject *parent)
+Communicate::Communicate(QObject *parent)
     : QObject(parent)
-    , m_text(escape(remove_incompatible_characters(text)))
-    , m_voice(QString("Microsoft Server Speech Text to Speech Voice (%1)").arg(voice))
-    , m_fileName(fileName)
 {
-    m_webSocket = new QWebSocket();
-    connect(m_webSocket, &QWebSocket::connected, this, &Communicate::onConnected);
-    connect(m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
-    connect(m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
-    connect(m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
-    // connect this->finished() to this->delete_tmp()
-    connect(this, &Communicate::finished, this, &Communicate::delete_tmp);
+    connect(&m_webSocket, &QWebSocket::connected, this, &Communicate::onConnected);
+    connect(&m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
+    connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
+    connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
 }
 
 Communicate::~Communicate() {
-    delete m_webSocket;
+    m_webSocket.close();
 }
+
+void Communicate::setText(QString text)
+{
+    m_text = escape(remove_incompatible_characters(text));
+}
+
+void Communicate::setVoice(QString voice)
+{
+    m_voice = QString("Microsoft Server Speech Text to Speech Voice (%1)").arg(voice);
+}
+
+void Communicate::setFileName(QString fileName)
+{
+    m_fileName = fileName;
+}
+
 
 void Communicate::start() {
     QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
@@ -32,7 +42,7 @@ void Communicate::start() {
     request.setRawHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41");
 
     // Open WebSocket connection
-    m_webSocket->open(request);
+    m_webSocket.open(request);
 }
 
 void Communicate::onConnected() {
@@ -49,8 +59,8 @@ void Communicate::onConnected() {
 
     QString ssmlAndData = ssml_headers_plus_data( connect_id(), date, ssml );
 
-    m_webSocket->sendTextMessage(headersAndData);
-    m_webSocket->sendTextMessage(ssmlAndData);
+    m_webSocket.sendTextMessage(headersAndData);
+    m_webSocket.sendTextMessage(ssmlAndData);
 }
 
 void Communicate::onBinaryMessageReceived(const QByteArray &message) {
@@ -82,7 +92,8 @@ void Communicate::onTextMessageReceived(const QString &message) {
     } else if (path == "turn.end") {
         m_downloadAudio = false;
         // End of audio data
-        m_webSocket->close();
+        // m_webSocket->close();
+        m_webSocket.abort();
         return;
     } else if (path == "audio.metadata") {
         // pass
@@ -110,26 +121,10 @@ void Communicate::save() {
 
     // open directory of m_fileName, not file itself
     QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_fileName).absolutePath()));
-
-
 }
 
-void Communicate::delete_tmp()
+void Communicate::play()
 {
-    // delete m_audioFile if it exists
-    if (QFile::exists(m_audioFile)) {
-        QFile::remove(m_audioFile);
-    }
-}
-
-void Communicate::onDisconnected() {
-    if (!m_fileName.isEmpty()) {
-        save();
-        emit saveFinished();
-        this->~Communicate();
-        return;
-    }
-
     // Handle disconnection
     QFile file(m_audioFile);
     if (!file.open(QIODevice::WriteOnly)) {
@@ -145,7 +140,6 @@ void Communicate::onDisconnected() {
     QObject::connect(player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
             emit finished();
-            this->~Communicate();
         }
     });
 
@@ -154,12 +148,23 @@ void Communicate::onDisconnected() {
 
     QObject::connect(this, &Communicate::stop, [&]() {
         emit finished();
-        this->~Communicate();
     });
 
     player->setSource(QUrl::fromLocalFile(m_audioFile));
     audioOutput->setVolume(50);
     player->play();
+}
+
+void Communicate::onDisconnected() {
+    if (!m_fileName.isEmpty()) {
+        save();
+        emit saveFinished();
+    }
+    else {
+        play();
+    }
+
+    m_audioDataReceived.clear();
 }
 
 // Utility functions

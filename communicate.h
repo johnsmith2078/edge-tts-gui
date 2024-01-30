@@ -29,15 +29,24 @@ class Communicate : public QObject
     Q_OBJECT
 
 public:
-    Communicate(QString text, QString voice = "zh-CN, XiaoyiNeural", QString fileName = "", QObject *parent = nullptr);
+    Communicate(QObject *parent = nullptr);
 
     ~Communicate();
 
-    void start();
-
     void save();
 
-    void delete_tmp();
+    void play();
+
+    // void delete_tmp();
+
+    void setText(QString text);
+
+    void setVoice(QString voice);
+
+    void setFileName(QString fileName);
+
+public slots:
+    void start();
 
 private slots:
     void onConnected();
@@ -62,7 +71,7 @@ private:
     QString m_rate = "+0%";
     QString m_volume = "+0%";
     QString m_pitch = "+0Hz";
-    QWebSocket *m_webSocket = nullptr;
+    QWebSocket m_webSocket;
     QByteArray m_audioDataReceived = "";
     QString m_audioFile = "audio.mp3";
     bool m_downloadAudio = false;

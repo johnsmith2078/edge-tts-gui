@@ -1,14 +1,24 @@
 #include "dialog.h"
 #include "ui_dialog.h"
-#include "communicate.h"
 
 Dialog::Dialog(QWidget *parent)
     : QDialog(parent)
     , ui(new Ui::Dialog)
+    , m_comm()
 {
     ui->setupUi(this);
-    Communicate *comm = new Communicate("");
-    comm->start();
+    // connect this->send() to this->m_comm.start()
+    connect(this, &Dialog::send, &m_comm, &Communicate::start);
+    connect(&m_comm, &Communicate::finished, [&]() {
+        ui->pushButtonPlay->setDisabled(false);
+        ui->pushButtonPlay->setText("▶️ 播放");
+        ui->pushButtonStop->setEnabled(false);
+    });
+    connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
+
+    connect(&m_comm, &Communicate::saveFinished, [&]() {
+        ui->pushButtonSave->setDisabled(false);
+    });
 }
 
 Dialog::~Dialog()
@@ -26,15 +36,12 @@ void Dialog::on_pushButtonPlay_clicked()
     ui->pushButtonPlay->setDisabled(true);
     ui->pushButtonPlay->setText("⏳合成中...");
     ui->pushButtonStop->setEnabled(true);
-    Communicate *comm = new Communicate(text, voice);
-    connect(comm, &Communicate::finished, [&]() {
-        ui->pushButtonPlay->setDisabled(false);
-        ui->pushButtonPlay->setText("▶️ 播放");
-        ui->pushButtonStop->setEnabled(false);
-    });
-    // connect this->stop() to comm->stop()
-    connect(this, &Dialog::stop, comm, &Communicate::stop);
-    comm->start();
+
+    m_comm.setText(text);
+    m_comm.setVoice(voice);
+    m_comm.setFileName("");
+
+    emit send();
 }
 
 void Dialog::on_pushButtonStop_clicked()
@@ -71,12 +78,11 @@ void Dialog::on_pushButtonSave_clicked()
 
     ui->pushButtonSave->setDisabled(true);
 
-    Communicate *comm = new Communicate(text, voice, fileName);
+    m_comm.setText(text);
+    m_comm.setVoice(voice);
+    m_comm.setFileName(fileName);
 
-    connect(comm, &Communicate::saveFinished, [&]() {
-        ui->pushButtonSave->setDisabled(false);
-    });
-    comm->start();
+    emit send();
 }
 
 

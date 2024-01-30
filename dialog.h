@@ -4,6 +4,7 @@
 #include <QDialog>
 #include <QThread>
 #include <QFileDialog>
+#include "communicate.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -20,6 +21,8 @@ public:
     ~Dialog();
 
 signals:
+    void send();
+
     void stop();
 
 private slots:
@@ -43,6 +46,7 @@ private slots:
 
 private:
     Ui::Dialog *ui;
+    Communicate m_comm;
     QString voice = "zh-CN, XiaoyiNeural";
     QString lastDir = "";
 }; // class Dialog
