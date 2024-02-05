@@ -12,17 +12,6 @@
 #include <QtMultimedia/QMediaPlayer>
 #include <QtMultimedia/QAudioOutput>
 
-// Constants
-const QString TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-const QString WSS_URL =
-    "wss://speech.platform.bing.com/consumer/speech/synthesize/"
-    "readaloud/edge/v1?TrustedClientToken="
-    + TRUSTED_CLIENT_TOKEN;
-const QString VOICE_LIST =
-    "https://speech.platform.bing.com/consumer/speech/synthesize/"
-    "readaloud/voices/list?trustedclienttoken="
-    + TRUSTED_CLIENT_TOKEN;
-
 // Class for communicating with the service
 class Communicate : public QObject
 {
@@ -36,8 +25,6 @@ public:
     void save();
 
     void play();
-
-    // void delete_tmp();
 
     void setText(QString text);
 
@@ -57,12 +44,16 @@ private slots:
 
     void onDisconnected();
 
+    void sendNextTextPart();
+
 signals:
     void finished();
 
     void stop();
 
     void saveFinished();
+
+    void audioDataReceived();
 
 private:
     QString m_text;
@@ -75,6 +66,10 @@ private:
     QByteArray m_audioDataReceived = "";
     QString m_audioFile = "audio.mp3";
     bool m_downloadAudio = false;
+    qsizetype m_textPartIndex;
+    QString m_date;
+
+    static const qsizetype maxMessageSize = 8192;
 
 private:
     // Utility functions

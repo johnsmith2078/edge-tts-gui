@@ -1,5 +1,16 @@
 #include "communicate.h"
 
+// Constants
+const QString TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
+const QString WSS_URL =
+    "wss://speech.platform.bing.com/consumer/speech/synthesize/"
+    "readaloud/edge/v1?TrustedClientToken="
+    + TRUSTED_CLIENT_TOKEN;
+const QString VOICE_LIST =
+    "https://speech.platform.bing.com/consumer/speech/synthesize/"
+    "readaloud/voices/list?trustedclienttoken="
+    + TRUSTED_CLIENT_TOKEN;
+
 Communicate::Communicate(QObject *parent)
     : QObject(parent)
 {
@@ -7,6 +18,7 @@ Communicate::Communicate(QObject *parent)
     connect(&m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
     connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
+    connect(this, &Communicate::audioDataReceived, this, &Communicate::sendNextTextPart);
 }
 
 Communicate::~Communicate() {
@@ -45,23 +57,32 @@ void Communicate::start() {
     m_webSocket.open(request);
 }
 
-void Communicate::onConnected() {
-    QString date = date_to_string();
-    QString ssml = mkssml(m_text, m_voice, m_rate, m_volume, m_pitch);
+void Communicate::sendNextTextPart() {
+    if (m_textPartIndex < m_text.length()) {
+        m_date = date_to_string();
 
-    QString headersAndData =
-        "X-Timestamp:" + date + "\r\n"
-                                "Content-Type:application/json; charset=utf-8\r\n"
-                                "Path:speech.config\r\n\r\n"
-                                "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{"
-                                "\"sentenceBoundaryEnabled\":false,\"wordBoundaryEnabled\":true},"
-                                "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n";
+        QString headersAndData =
+            "X-Timestamp:" + m_date + "\r\n"
+                                      "Content-Type:application/json; charset=utf-8\r\n"
+                                      "Path:speech.config\r\n\r\n"
+                                      "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{"
+                                      "\"sentenceBoundaryEnabled\":false,\"wordBoundaryEnabled\":true},"
+                                      "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n";
+        m_webSocket.sendTextMessage(headersAndData);
 
-    QString ssmlAndData = ssml_headers_plus_data( connect_id(), date, ssml );
-
-    m_webSocket.sendTextMessage(headersAndData);
-    m_webSocket.sendTextMessage(ssmlAndData);
+        QString part = m_text.mid(m_textPartIndex, maxMessageSize);
+        QString ssml = mkssml(part, m_voice, m_rate, m_volume, m_pitch);
+        QString ssmlAndData = ssml_headers_plus_data( connect_id(), m_date, ssml );
+        m_webSocket.sendTextMessage(ssmlAndData);
+    }
 }
+
+void Communicate::onConnected() {
+    m_textPartIndex = 0;
+
+    sendNextTextPart();
+}
+
 
 void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     if (!m_downloadAudio) {
@@ -79,8 +100,6 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     }
 
     QByteArray audioData = message.mid(headerLength + 2);
-    // Emit a signal or do something with the audio data
-    // emit audioDataReceived({"audio", audioData});
     m_audioDataReceived += audioData;
 }
 
@@ -91,10 +110,12 @@ void Communicate::onTextMessageReceived(const QString &message) {
         m_downloadAudio = true;
     } else if (path == "turn.end") {
         m_downloadAudio = false;
+        m_textPartIndex += maxMessageSize;
+        if (m_textPartIndex >= m_text.length()) {
+            m_webSocket.close();
+        }
         // End of audio data
-        // m_webSocket->close();
-        m_webSocket.abort();
-        return;
+        emit audioDataReceived();
     } else if (path == "audio.metadata") {
         // pass
     } else if (path == "response") {
@@ -112,15 +133,20 @@ void Communicate::save() {
     file.write(m_audioDataReceived);
     file.close();
 
-    QSystemTrayIcon *trayIcon = new QSystemTrayIcon(this);
-    trayIcon->setIcon(QIcon("icon.png")); // 设置图标
-    trayIcon->show(); // 显示托盘图标
+    // if icon.png exists, show notification
+    if (QFile("icon.png").exists()) {
+        QSystemTrayIcon *trayIcon = new QSystemTrayIcon(this);
+        trayIcon->setIcon(QIcon("icon.png")); // 设置图标
+        trayIcon->show(); // 显示托盘图标
 
-    // 显示通知
-    trayIcon->showMessage("保存成功", "文件已保存到 " + m_fileName, QSystemTrayIcon::Information, 10000);
+        // show notification
+        trayIcon->showMessage("保存成功", "文件已保存到 " + m_fileName, QSystemTrayIcon::Information, 10000);
+    }
 
     // open directory of m_fileName, not file itself
     QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_fileName).absolutePath()));
+
+    emit saveFinished();
 }
 
 void Communicate::play()
@@ -158,7 +184,6 @@ void Communicate::play()
 void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
-        emit saveFinished();
     }
     else {
         play();
@@ -187,8 +212,10 @@ QString Communicate::remove_incompatible_characters(QString str) {
     for (int i = 0; i < str.size(); ++i) {
         QChar ch = str.at(i);
         int code = ch.unicode();
-        if ((0 <= code && code <= 8) || (10 <= code && code <= 31)) {
+        if ((0 <= code && code <= 8) || (11 <= code && code <= 31 && code != 13)) {
             str.replace(i, 1, ' ');
+        } else if (code == 10 || code == 13) {
+            str.replace(i, 1, '\0');
         }
     }
     return str;

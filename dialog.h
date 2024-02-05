@@ -2,8 +2,6 @@
 #define DIALOG_H
 
 #include <QDialog>
-#include <QThread>
-#include <QFileDialog>
 #include "communicate.h"
 
 QT_BEGIN_NAMESPACE
