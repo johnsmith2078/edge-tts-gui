@@ -32,6 +32,8 @@ public:
 
     void setFileName(QString fileName);
 
+    void setDuplicated(bool dup);
+
 public slots:
     void start();
 
@@ -55,6 +57,8 @@ signals:
 
     void audioDataReceived();
 
+    void duplicated();
+
 private:
     QString m_text;
     QString m_voice;
@@ -68,6 +72,7 @@ private:
     bool m_downloadAudio = false;
     qsizetype m_textPartIndex;
     QString m_date;
+    bool m_isDuplicated = false;
 
     static const qsizetype maxMessageSize = 8192;
 

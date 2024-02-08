@@ -19,6 +19,7 @@ Communicate::Communicate(QObject *parent)
     connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
     connect(this, &Communicate::audioDataReceived, this, &Communicate::sendNextTextPart);
+    connect(this, &Communicate::duplicated, &m_webSocket, &QWebSocket::disconnected);
 }
 
 Communicate::~Communicate() {
@@ -40,8 +41,21 @@ void Communicate::setFileName(QString fileName)
     m_fileName = fileName;
 }
 
+void Communicate::setDuplicated(bool dup)
+{
+    m_isDuplicated = dup;
+    if (!m_isDuplicated) {
+        m_audioDataReceived.clear();
+    }
+}
+
 
 void Communicate::start() {
+    if (m_isDuplicated) {
+        emit duplicated();
+        return;
+    }
+
     QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
     QNetworkRequest request(url);
 
@@ -188,8 +202,6 @@ void Communicate::onDisconnected() {
     else {
         play();
     }
-
-    m_audioDataReceived.clear();
 }
 
 // Utility functions

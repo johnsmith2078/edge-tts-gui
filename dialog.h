@@ -18,6 +18,8 @@ public:
     Dialog(QWidget *parent = nullptr);
     ~Dialog();
 
+    void checkDuplicate(const QString& text, const QString& voice);
+
 signals:
     void send();
 
@@ -45,6 +47,8 @@ private slots:
 private:
     Ui::Dialog *ui;
     Communicate m_comm;
+    QString m_lastText;
+    QString m_lastVoice;
     QString voice = "zh-CN, XiaoyiNeural";
     QString lastDir = "";
 }; // class Dialog

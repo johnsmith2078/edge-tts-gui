@@ -27,6 +27,15 @@ Dialog::~Dialog()
     delete ui;
 }
 
+void Dialog::checkDuplicate(const QString& text, const QString& voice)
+{
+    if (text == m_lastText && voice == m_lastVoice) {
+        m_comm.setDuplicated(true);
+    } else {
+        m_comm.setDuplicated(false);
+    }
+}
+
 void Dialog::on_pushButtonPlay_clicked()
 {
     QString text = ui->plainTextEditContent->toPlainText();
@@ -41,6 +50,9 @@ void Dialog::on_pushButtonPlay_clicked()
     m_comm.setText(text);
     m_comm.setVoice(voice);
     m_comm.setFileName("");
+    checkDuplicate(text, voice);
+    m_lastText = text;
+    m_lastVoice = voice;
 
     emit send();
 }
@@ -82,6 +94,9 @@ void Dialog::on_pushButtonSave_clicked()
     m_comm.setText(text);
     m_comm.setVoice(voice);
     m_comm.setFileName(fileName);
+    checkDuplicate(text, voice);
+    m_lastText = text;
+    m_lastVoice = voice;
 
     emit send();
 }
