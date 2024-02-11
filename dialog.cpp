@@ -20,11 +20,31 @@ Dialog::Dialog(QWidget *parent)
     connect(&m_comm, &Communicate::saveFinished, [&]() {
         ui->pushButtonSave->setDisabled(false);
     });
+
+    ui->plainTextEditContent->installEventFilter(this);
 }
 
 Dialog::~Dialog()
 {
     delete ui;
+}
+
+bool Dialog::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == ui->plainTextEditContent && event->type() == QEvent::KeyPress) {
+        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonPlay->isEnabled()) {
+            // Ctrl+Enter was pressed
+            ui->pushButtonPlay->click();
+            return true;
+        } else if (keyEvent->key() == Qt::Key_S && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonSave->isEnabled()) {
+            ui->pushButtonSave->click();
+            return true;
+        }
+    }
+
+    // pass the event on to the parent class
+    return QWidget::eventFilter(obj, event);
 }
 
 void Dialog::checkDuplicate(const QString& text, const QString& voice)
@@ -34,6 +54,16 @@ void Dialog::checkDuplicate(const QString& text, const QString& voice)
     } else {
         m_comm.setDuplicated(false);
     }
+}
+
+void Dialog::setCommunicate(const QString& text, const QString& voice, const QString& fileName)
+{
+    m_comm.setText(text);
+    m_comm.setVoice(voice);
+    m_comm.setFileName(fileName);
+    checkDuplicate(text, voice);
+    m_lastText = text;
+    m_lastVoice = voice;
 }
 
 void Dialog::on_pushButtonPlay_clicked()
@@ -47,12 +77,7 @@ void Dialog::on_pushButtonPlay_clicked()
     ui->pushButtonPlay->setText("⏳合成中...");
     ui->pushButtonStop->setEnabled(true);
 
-    m_comm.setText(text);
-    m_comm.setVoice(voice);
-    m_comm.setFileName("");
-    checkDuplicate(text, voice);
-    m_lastText = text;
-    m_lastVoice = voice;
+    setCommunicate(text, voice, "");
 
     emit send();
 }
@@ -91,12 +116,7 @@ void Dialog::on_pushButtonSave_clicked()
 
     ui->pushButtonSave->setDisabled(true);
 
-    m_comm.setText(text);
-    m_comm.setVoice(voice);
-    m_comm.setFileName(fileName);
-    checkDuplicate(text, voice);
-    m_lastText = text;
-    m_lastVoice = voice;
+    setCommunicate(text, voice, fileName);
 
     emit send();
 }

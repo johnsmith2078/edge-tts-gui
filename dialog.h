@@ -2,6 +2,7 @@
 #define DIALOG_H
 
 #include <QDialog>
+#include <QKeyEvent>
 #include "communicate.h"
 
 QT_BEGIN_NAMESPACE
@@ -18,12 +19,16 @@ public:
     Dialog(QWidget *parent = nullptr);
     ~Dialog();
 
-    void checkDuplicate(const QString& text, const QString& voice);
-
 signals:
     void send();
 
     void stop();
+
+private:
+    void checkDuplicate(const QString& text, const QString& voice);
+
+    void setCommunicate(const QString& text, const QString& voice, const QString& fileName);
+
 
 private slots:
     void on_pushButtonPlay_clicked();
@@ -51,6 +56,9 @@ private:
     QString m_lastVoice;
     QString voice = "zh-CN, XiaoyiNeural";
     QString lastDir = "";
+
+protected:
+    bool eventFilter(QObject *obj, QEvent *event) override;
 }; // class Dialog
 
 #endif // DIALOG_H
