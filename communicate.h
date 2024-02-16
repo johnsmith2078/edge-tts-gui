@@ -11,6 +11,8 @@
 #include <QDesktopServices>
 #include <QtMultimedia/QMediaPlayer>
 #include <QtMultimedia/QAudioOutput>
+#include <QBuffer>
+#include <QQueue>
 
 // Class for communicating with the service
 class Communicate : public QObject
@@ -25,6 +27,8 @@ public:
     void save();
 
     void play();
+
+    void forcePlay();
 
     void setText(QString text);
 
@@ -68,15 +72,21 @@ private:
     QString m_pitch = "+0Hz";
     QWebSocket m_webSocket;
     QByteArray m_audioDataReceived = "";
-    QString m_audioFile = "audio.mp3";
+    // QString m_audioFile = "audio.mp3";
     bool m_downloadAudio = false;
     qsizetype m_textPartIndex;
     QString m_date;
     bool m_isDuplicated = false;
     QMediaPlayer* m_player;
     QAudioOutput* m_audioOutput;
+    QBuffer m_audioBuffer;
+    bool m_playStarted = false;
+    qsizetype m_audioOffset;
+    // qsizetype m_audioLength;
+    QQueue<qsizetype> m_audioLengths;
 
-    static const qsizetype maxMessageSize = 8192;
+    static const qsizetype ms_maxMessageSize = 8192 * 16;
+    static const qsizetype ms_trunkSize = 8192 * 16; // size in bytes not to tear apart
 
 private:
     // Utility functions

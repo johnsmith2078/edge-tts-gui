@@ -23,11 +23,17 @@ Communicate::Communicate(QObject *parent)
 
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
+    m_audioOutput->setVolume(50);
     m_player->setAudioOutput(m_audioOutput);
 
     QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
-            emit finished();
+            if (m_audioOffset == m_audioDataReceived.size()) {
+                m_audioOffset = 0;
+                emit finished();
+            } else {
+                play();
+            }
         }
     });
 
@@ -37,10 +43,24 @@ Communicate::Communicate(QObject *parent)
     QObject::connect(this, &Communicate::stop, [&]() {
         emit finished();
     });
+
+    // QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged,
+    //                  [=](QMediaPlayer::MediaStatus status)
+    //                  { qDebug() << "MediaStatus:" << m_player->mediaStatus() << "|" << status; });
+
+    // QObject::connect(m_player, &QMediaPlayer::errorOccurred,
+    //                  [=](QMediaPlayer::Error error)
+    //                  { qDebug() << "Error:" << m_player->errorString() << "|" << error; });
+
+    // QObject::connect(m_player, &QMediaPlayer::playbackStateChanged,
+    //                  [=](QMediaPlayer::PlaybackState state)
+    //                  { qDebug() << "PlaybackState:" << m_player->playbackState() << "|" << state; });
 }
 
 Communicate::~Communicate() {
     m_webSocket.close();
+    delete m_player;
+    delete m_audioOutput;
 }
 
 void Communicate::setText(QString text)
@@ -61,17 +81,21 @@ void Communicate::setFileName(QString fileName)
 void Communicate::setDuplicated(bool dup)
 {
     m_isDuplicated = dup;
-    if (!m_isDuplicated) {
-        m_audioDataReceived.clear();
-    }
+    // if (!m_isDuplicated) {
+    //     m_audioDataReceived.clear();
+    // }
+    m_audioDataReceived.clear();
 }
 
 
 void Communicate::start() {
-    if (m_isDuplicated) {
-        emit duplicated();
-        return;
-    }
+    // if (m_isDuplicated) {
+    //     emit duplicated();
+    //     return;
+    // }
+
+    m_playStarted = false;
+    m_audioOffset = 0;
 
     QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
     QNetworkRequest request(url);
@@ -101,7 +125,7 @@ void Communicate::sendNextTextPart() {
                                       "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n";
         m_webSocket.sendTextMessage(headersAndData);
 
-        QString part = m_text.mid(m_textPartIndex, maxMessageSize);
+        QString part = m_text.mid(m_textPartIndex,  ms_maxMessageSize);
         QString ssml = mkssml(part, m_voice, m_rate, m_volume, m_pitch);
         QString ssmlAndData = ssml_headers_plus_data( connect_id(), m_date, ssml );
         m_webSocket.sendTextMessage(ssmlAndData);
@@ -132,6 +156,12 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
 
     QByteArray audioData = message.mid(headerLength + 2);
     m_audioDataReceived += audioData;
+    m_audioLengths << audioData.size();
+
+    if (!m_playStarted && m_audioDataReceived.size() >= ms_trunkSize && m_fileName.isEmpty()) {
+        play();
+        m_playStarted = true;
+    }
 }
 
 void Communicate::onTextMessageReceived(const QString &message) {
@@ -141,7 +171,7 @@ void Communicate::onTextMessageReceived(const QString &message) {
         m_downloadAudio = true;
     } else if (path == "turn.end") {
         m_downloadAudio = false;
-        m_textPartIndex += maxMessageSize;
+        m_textPartIndex += ms_maxMessageSize;
         if (m_textPartIndex >= m_text.length()) {
             m_webSocket.close();
         }
@@ -182,18 +212,30 @@ void Communicate::save() {
 
 void Communicate::play()
 {
-    // Handle disconnection
-    QFile file(m_audioFile);
-    if (!file.open(QIODevice::WriteOnly)) {
-        throw std::runtime_error("Could not open file to write audio.");
+    if (m_audioDataReceived.size() < ms_trunkSize) {
+        return;
     }
-    file.write(m_audioDataReceived);
-    file.close();
+    qsizetype length = 0;
+    while(!m_audioLengths.empty() && length < ms_trunkSize) {
+        length += m_audioLengths.dequeue();
+    }
 
-    QUrl source = QUrl::fromLocalFile(m_audioFile);
+    // qDebug() << "progressive play";
     m_player->setSource(QUrl());
-    m_player->setSource(source);
-    m_audioOutput->setVolume(50);
+    m_audioBuffer.close();
+    m_audioBuffer.setData(m_audioDataReceived.constData() + m_audioOffset, length);
+    m_audioOffset += length;
+    m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
+    m_player->play();
+}
+
+void Communicate::forcePlay()
+{
+    // qDebug() << "force play";
+    m_player->setSource(QUrl());
+    m_audioBuffer.close();
+    m_audioBuffer.setData(m_audioDataReceived);
+    m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
     m_player->play();
 }
 
@@ -201,9 +243,13 @@ void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
     }
-    else {
-        play();
-    }
+    else if (m_audioDataReceived.size() < ms_trunkSize) {
+        forcePlay();
+        m_audioOffset += m_audioDataReceived.size();
+    }/* else if (m_isDuplicated) {
+        m_isDuplicated = false;
+        start();
+    }*/
 }
 
 // Utility functions
