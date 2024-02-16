@@ -19,26 +19,18 @@ Communicate::Communicate(QObject *parent)
     connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
     connect(this, &Communicate::audioDataReceived, this, &Communicate::sendNextTextPart);
-    connect(this, &Communicate::duplicated, &m_webSocket, &QWebSocket::disconnected);
+    connect(this, &Communicate::finished, [&]() {
+        m_webSocket.close();
+    });
 
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
     m_audioOutput->setVolume(50);
     m_player->setAudioOutput(m_audioOutput);
 
-    qsizetype scaleSize = m_text.size() * 500;
-    qsizetype minSize = 1024 * 1024;
-    qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
-    m_audioDataReceived.resize(defaultSize, 0);
-
     QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
-            if (m_audioOffset == m_audioDataReceived.size()) {
-                m_audioOffset = 0;
-                emit finished();
-            } else {
-                play();
-            }
+            emit finished();
         }
     });
 
@@ -48,10 +40,6 @@ Communicate::Communicate(QObject *parent)
     QObject::connect(this, &Communicate::stop, [&]() {
         emit finished();
     });
-
-    // QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged,
-    //                  [=](QMediaPlayer::MediaStatus status)
-    //                  { qDebug() << "MediaStatus:" << m_player->mediaStatus() << "|" << status; });
 }
 
 Communicate::~Communicate() {
@@ -86,6 +74,11 @@ void Communicate::start() {
     m_playStarted = false;
     m_audioOffset = 0;
     m_audioDataReceived.clear();
+
+    qsizetype scaleSize = m_text.size() * 500;
+    qsizetype minSize = 1024 * 1024;
+    qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
+    m_audioDataReceived.resize(defaultSize, 0);    
 
     QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
     QNetworkRequest request(url);
@@ -148,7 +141,7 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     m_audioDataReceived.replace(m_audioOffset, audioData.size(), audioData);
     m_audioOffset += audioData.size();
 
-    if (!m_playStarted && m_audioDataReceived.size() >= ms_trunkSize && m_fileName.isEmpty()) {
+    if (!m_playStarted && m_audioOffset >= ms_trunkSize && m_fileName.isEmpty()) {
         play();
         m_playStarted = true;
     }
@@ -237,13 +230,10 @@ void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
     }
-    else if (m_audioDataReceived.size() < ms_trunkSize) {
+    else if (!m_playStarted && m_audioOffset < ms_trunkSize) {
         forcePlay();
-        m_audioOffset += m_audioDataReceived.size();
-    }/* else if (m_isDuplicated) {
-        m_isDuplicated = false;
-        start();
-    }*/
+        m_playStarted = true;
+    }
 }
 
 // Utility functions
