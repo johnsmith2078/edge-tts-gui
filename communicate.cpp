@@ -20,6 +20,23 @@ Communicate::Communicate(QObject *parent)
     connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
     connect(this, &Communicate::audioDataReceived, this, &Communicate::sendNextTextPart);
     connect(this, &Communicate::duplicated, &m_webSocket, &QWebSocket::disconnected);
+
+    m_player = new QMediaPlayer(this);
+    m_audioOutput = new QAudioOutput(this);
+    m_player->setAudioOutput(m_audioOutput);
+
+    QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
+        if (status == QMediaPlayer::EndOfMedia) {
+            emit finished();
+        }
+    });
+
+    // connect this->stop() to player->stop() and emit finished()
+    QObject::connect(this, &Communicate::stop, m_player, &QMediaPlayer::stop);
+
+    QObject::connect(this, &Communicate::stop, [&]() {
+        emit finished();
+    });
 }
 
 Communicate::~Communicate() {
@@ -173,26 +190,11 @@ void Communicate::play()
     file.write(m_audioDataReceived);
     file.close();
 
-    auto player = new QMediaPlayer;
-    auto audioOutput = new QAudioOutput;
-    player->setAudioOutput(audioOutput);
-
-    QObject::connect(player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
-        if (status == QMediaPlayer::EndOfMedia) {
-            emit finished();
-        }
-    });
-
-    // connect this->stop() to player->stop() and emit finished()
-    QObject::connect(this, &Communicate::stop, player, &QMediaPlayer::stop);
-
-    QObject::connect(this, &Communicate::stop, [&]() {
-        emit finished();
-    });
-
-    player->setSource(QUrl::fromLocalFile(m_audioFile));
-    audioOutput->setVolume(50);
-    player->play();
+    QUrl source = QUrl::fromLocalFile(m_audioFile);
+    m_player->setSource(QUrl());
+    m_player->setSource(source);
+    m_audioOutput->setVolume(50);
+    m_player->play();
 }
 
 void Communicate::onDisconnected() {

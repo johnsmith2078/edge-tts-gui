@@ -73,6 +73,8 @@ private:
     qsizetype m_textPartIndex;
     QString m_date;
     bool m_isDuplicated = false;
+    QMediaPlayer* m_player;
+    QAudioOutput* m_audioOutput;
 
     static const qsizetype maxMessageSize = 8192;
 
