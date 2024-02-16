@@ -61,7 +61,7 @@ void Dialog::setCommunicate(const QString& text, const QString& voice, const QSt
     m_comm.setText(text);
     m_comm.setVoice(voice);
     m_comm.setFileName(fileName);
-    checkDuplicate(text, voice);
+    // checkDuplicate(text, voice);
     m_lastText = text;
     m_lastVoice = voice;
 }

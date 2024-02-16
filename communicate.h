@@ -83,7 +83,7 @@ private:
     bool m_playStarted = false;
     qsizetype m_audioOffset;
     // qsizetype m_audioLength;
-    QQueue<qsizetype> m_audioLengths;
+    // QQueue<qsizetype> m_audioLengths;
 
     static const qsizetype ms_maxMessageSize = 8192 * 16;
     static const qsizetype ms_trunkSize = 8192 * 16; // size in bytes not to tear apart
@@ -104,7 +104,7 @@ private:
 
     QPair<QMap<QString, QString>, QString> get_headers_and_data(const QString& message);
 
-    void showInFolder(const QString& path);
+    void removeTrailingZeros(QByteArray &byteArray);
 };
 
 #endif // COMMUNICATE_H

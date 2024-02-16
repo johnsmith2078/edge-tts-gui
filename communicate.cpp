@@ -26,6 +26,11 @@ Communicate::Communicate(QObject *parent)
     m_audioOutput->setVolume(50);
     m_player->setAudioOutput(m_audioOutput);
 
+    qsizetype scaleSize = m_text.size() * 500;
+    qsizetype minSize = 1024 * 1024;
+    qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
+    m_audioDataReceived.resize(defaultSize, 0);
+
     QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
             if (m_audioOffset == m_audioDataReceived.size()) {
@@ -47,14 +52,6 @@ Communicate::Communicate(QObject *parent)
     // QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged,
     //                  [=](QMediaPlayer::MediaStatus status)
     //                  { qDebug() << "MediaStatus:" << m_player->mediaStatus() << "|" << status; });
-
-    // QObject::connect(m_player, &QMediaPlayer::errorOccurred,
-    //                  [=](QMediaPlayer::Error error)
-    //                  { qDebug() << "Error:" << m_player->errorString() << "|" << error; });
-
-    // QObject::connect(m_player, &QMediaPlayer::playbackStateChanged,
-    //                  [=](QMediaPlayer::PlaybackState state)
-    //                  { qDebug() << "PlaybackState:" << m_player->playbackState() << "|" << state; });
 }
 
 Communicate::~Communicate() {
@@ -81,21 +78,14 @@ void Communicate::setFileName(QString fileName)
 void Communicate::setDuplicated(bool dup)
 {
     m_isDuplicated = dup;
-    // if (!m_isDuplicated) {
-    //     m_audioDataReceived.clear();
-    // }
     m_audioDataReceived.clear();
 }
 
 
 void Communicate::start() {
-    // if (m_isDuplicated) {
-    //     emit duplicated();
-    //     return;
-    // }
-
     m_playStarted = false;
     m_audioOffset = 0;
+    m_audioDataReceived.clear();
 
     QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
     QNetworkRequest request(url);
@@ -155,8 +145,8 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     }
 
     QByteArray audioData = message.mid(headerLength + 2);
-    m_audioDataReceived += audioData;
-    m_audioLengths << audioData.size();
+    m_audioDataReceived.replace(m_audioOffset, audioData.size(), audioData);
+    m_audioOffset += audioData.size();
 
     if (!m_playStarted && m_audioDataReceived.size() >= ms_trunkSize && m_fileName.isEmpty()) {
         play();
@@ -186,11 +176,22 @@ void Communicate::onTextMessageReceived(const QString &message) {
     }
 }
 
+void Communicate::removeTrailingZeros(QByteArray &byteArray) {
+    // 查找最后一个非零字节的位置
+    int n = byteArray.size() - 1;
+    while (n >= 0 && byteArray.at(n) == '\0') {
+        --n;
+    }
+    // 截断数组以去除末尾的零字节
+    byteArray.truncate(n + 1);
+}
+
 void Communicate::save() {
     QFile file(m_fileName);
     if (!file.open(QIODevice::WriteOnly)) {
         throw std::runtime_error("Could not open file to write audio.");
     }
+    removeTrailingZeros(m_audioDataReceived);
     file.write(m_audioDataReceived);
     file.close();
 
@@ -215,16 +216,9 @@ void Communicate::play()
     if (m_audioDataReceived.size() < ms_trunkSize) {
         return;
     }
-    qsizetype length = 0;
-    while(!m_audioLengths.empty() && length < ms_trunkSize) {
-        length += m_audioLengths.dequeue();
-    }
-
-    // qDebug() << "progressive play";
     m_player->setSource(QUrl());
     m_audioBuffer.close();
-    m_audioBuffer.setData(m_audioDataReceived.constData() + m_audioOffset, length);
-    m_audioOffset += length;
+    m_audioBuffer.setBuffer(&m_audioDataReceived);
     m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
     m_player->play();
 }
