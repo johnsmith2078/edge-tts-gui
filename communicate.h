@@ -72,7 +72,6 @@ private:
     QString m_pitch = "+0Hz";
     QWebSocket m_webSocket;
     QByteArray m_audioDataReceived = "";
-    // QString m_audioFile = "audio.mp3";
     bool m_downloadAudio = false;
     qsizetype m_textPartIndex;
     QString m_date;
@@ -82,11 +81,9 @@ private:
     QBuffer m_audioBuffer;
     bool m_playStarted = false;
     qsizetype m_audioOffset;
-    // qsizetype m_audioLength;
-    // QQueue<qsizetype> m_audioLengths;
 
     static const qsizetype ms_maxMessageSize = 8192 * 16;
-    static const qsizetype ms_trunkSize = 8192 * 16; // size in bytes not to tear apart
+    static const qsizetype ms_startupSize = 8192 * 4;
 
 private:
     // Utility functions

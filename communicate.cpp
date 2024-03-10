@@ -141,7 +141,7 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     m_audioDataReceived.replace(m_audioOffset, audioData.size(), audioData);
     m_audioOffset += audioData.size();
 
-    if (!m_playStarted && m_audioOffset >= ms_trunkSize && m_fileName.isEmpty()) {
+    if (!m_playStarted && m_fileName.isEmpty() && m_audioOffset >= ms_startupSize) {
         play();
         m_playStarted = true;
     }
@@ -170,12 +170,12 @@ void Communicate::onTextMessageReceived(const QString &message) {
 }
 
 void Communicate::removeTrailingZeros(QByteArray &byteArray) {
-    // 查找最后一个非零字节的位置
+    // Find the position of the last non-zero byte
     int n = byteArray.size() - 1;
     while (n >= 0 && byteArray.at(n) == '\0') {
         --n;
     }
-    // 截断数组以去除末尾的零字节
+    // Truncate the array to remove trailing zero bytes
     byteArray.truncate(n + 1);
 }
 
@@ -206,7 +206,7 @@ void Communicate::save() {
 
 void Communicate::play()
 {
-    if (m_audioDataReceived.size() < ms_trunkSize) {
+    if (m_audioDataReceived.size() < ms_startupSize) {
         return;
     }
     m_player->setSource(QUrl());
@@ -230,7 +230,7 @@ void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
     }
-    else if (!m_playStarted && m_audioOffset < ms_trunkSize) {
+    else if (!m_playStarted && m_audioOffset < ms_startupSize) {
         forcePlay();
         m_playStarted = true;
     }
