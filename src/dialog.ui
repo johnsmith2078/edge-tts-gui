@@ -31,7 +31,7 @@
     <rect>
      <x>20</x>
      <y>360</y>
-     <width>474</width>
+     <width>389</width>
      <height>63</height>
     </rect>
    </property>
@@ -42,14 +42,14 @@
     <item>
      <widget class="QRadioButton" name="radioButtonXiaoxiao">
       <property name="text">
-       <string>Xiaoxiao(F)</string>
+       <string>晓晓(女)</string>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QRadioButton" name="radioButtonXiaoyi">
       <property name="text">
-       <string>Xiaoyi(F)</string>
+       <string>晓意(女)</string>
       </property>
       <property name="checked">
        <bool>true</bool>
@@ -59,28 +59,28 @@
     <item>
      <widget class="QRadioButton" name="radioButtonYunjian">
       <property name="text">
-       <string>Yunjian</string>
+       <string>云间</string>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QRadioButton" name="radioButtonYunxi">
       <property name="text">
-       <string>Yunxi</string>
+       <string>云希</string>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QRadioButton" name="radioButtonYunxia">
       <property name="text">
-       <string>Yunxia</string>
+       <string>云霞</string>
       </property>
      </widget>
     </item>
     <item>
      <widget class="QRadioButton" name="radioButtonYunyang">
       <property name="text">
-       <string>Yunyang</string>
+       <string>云阳</string>
       </property>
      </widget>
     </item>

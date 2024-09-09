@@ -29,6 +29,12 @@ Dialog::~Dialog()
     delete ui;
 }
 
+void Dialog::playText(const QString& text)
+{
+    ui->plainTextEditContent->setPlainText(text);
+    on_pushButtonPlay_clicked();
+}
+
 bool Dialog::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == ui->plainTextEditContent && event->type() == QEvent::KeyPress) {

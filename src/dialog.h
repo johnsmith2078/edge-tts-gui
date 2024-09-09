@@ -16,7 +16,18 @@ class Dialog : public QDialog
     Q_OBJECT
 
 public:
+    static Dialog& getInstance() {
+        static Dialog instance {};
+        return instance;
+    }
+
+    static Ui::Dialog* getUI() {
+        return getInstance().ui;
+    }
+
+private:
     Dialog(QWidget *parent = nullptr);
+public:
     ~Dialog();
 
 signals:
@@ -29,6 +40,8 @@ private:
 
     void setCommunicate(const QString& text, const QString& voice, const QString& fileName);
 
+public:
+    void playText(const QString& text);
 
 private slots:
     void on_pushButtonPlay_clicked();
