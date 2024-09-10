@@ -1,7 +1,12 @@
 # edge-tts-gui
-A simple GUI for the edge-tts, no need to install any dependencies, just download the executable file and run it.
+一个简单的edge-tts的GUI，无需安装任何依赖项，只需下载压缩包解压，并运行可执行文件即可。
 
-一个简单的edge-tts的GUI，无需安装任何依赖项，只需下载可执行文件并运行。
+快捷键：
+- `Ctrl` + `Enter`：播放
+- `Ctrl` + `S`：保存
+
+全局快捷键：
+- `F9`：快速转换（转换光标选中文本）
 
 ![interface](cover.jpg)
 
