@@ -13,6 +13,18 @@
     <height>530</height>
    </rect>
   </property>
+  <property name="minimumSize">
+   <size>
+    <width>742</width>
+    <height>530</height>
+   </size>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>742</width>
+    <height>530</height>
+   </size>
+  </property>
   <property name="windowTitle">
    <string>文本转语音</string>
   </property>
