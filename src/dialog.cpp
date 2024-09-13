@@ -1,6 +1,7 @@
 #include "dialog.h"
 #include "ui_dialog.h"
 #include <QFileDialog>
+#include <QMimeData>
 
 Dialog::Dialog(QWidget *parent)
     : QDialog(parent)
@@ -21,6 +22,9 @@ Dialog::Dialog(QWidget *parent)
         ui->pushButtonSave->setDisabled(false);
     });
 
+    setAcceptDrops(true);
+    ui->plainTextEditContent->setAcceptDrops(false);
+
     ui->plainTextEditContent->installEventFilter(this);
 }
 
@@ -31,8 +35,13 @@ Dialog::~Dialog()
 
 void Dialog::playText(const QString& text)
 {
-    ui->plainTextEditContent->setPlainText(text);
-    on_pushButtonPlay_clicked();
+    ui->pushButtonPlay->setDisabled(true);
+    ui->pushButtonPlay->setText("⏳合成中...");
+    ui->pushButtonStop->setEnabled(true);
+
+    setCommunicate(text, voice, "");
+
+    emit send();
 }
 
 bool Dialog::eventFilter(QObject *obj, QEvent *event)
@@ -40,10 +49,11 @@ bool Dialog::eventFilter(QObject *obj, QEvent *event)
     if (obj == ui->plainTextEditContent && event->type() == QEvent::KeyPress) {
         QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
         if (keyEvent->key() == Qt::Key_Return && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonPlay->isEnabled()) {
-            // Ctrl+Enter was pressed
+            // Ctrl+Enter was pressed, play
             ui->pushButtonPlay->click();
             return true;
         } else if (keyEvent->key() == Qt::Key_S && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonSave->isEnabled()) {
+            // Ctrl+S was pressed, save
             ui->pushButtonSave->click();
             return true;
         }
@@ -51,6 +61,33 @@ bool Dialog::eventFilter(QObject *obj, QEvent *event)
 
     // pass the event on to the parent class
     return QWidget::eventFilter(obj, event);
+}
+
+void Dialog::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event->mimeData()->hasUrls()) {
+        event->acceptProposedAction();  // 接受拖拽操作
+    }
+}
+
+void Dialog::dropEvent(QDropEvent *event)
+{
+    const QMimeData *mimeData = event->mimeData();
+
+    if (mimeData->hasUrls()) {
+        QList<QUrl> urlList = mimeData->urls();
+        if (!urlList.isEmpty()) {
+            QString filePath = urlList.first().toLocalFile();  // 获取文件路径
+            QFile file(filePath);
+
+            // 检查是否是文本文件
+            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+                QTextStream in(&file);
+                ui->plainTextEditContent->setPlainText(in.readAll());  // 读取文件并设置为文本框内容
+                file.close();
+            }
+        }
+    }
 }
 
 void Dialog::checkDuplicate(const QString& text, const QString& voice)

@@ -21,9 +21,6 @@ public:
         return instance;
     }
 
-    static Ui::Dialog* getUI() {
-        return getInstance().ui;
-    }
 
 private:
     Dialog(QWidget *parent = nullptr);
@@ -72,6 +69,10 @@ private:
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
+
+    void dragEnterEvent(QDragEnterEvent *event) override;
+
+    void dropEvent(QDropEvent *e) override;
 }; // class Dialog
 
 #endif // DIALOG_H
