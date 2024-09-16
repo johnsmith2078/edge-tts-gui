@@ -3,6 +3,7 @@
 
 #include <QDialog>
 #include <QKeyEvent>
+#include <QMap>
 #include "communicate.h"
 
 QT_BEGIN_NAMESPACE
@@ -66,6 +67,17 @@ private:
     QString m_lastVoice;
     QString voice = "zh-CN, XiaoyiNeural";
     QString lastDir = "";
+
+private:
+    void loadVoiceData();
+
+    QMap<QString, QMap<QString, QString>> data; // 存储语言、语音名称和代码
+
+private slots:
+    void onLanguageChanged(const QString &language);
+
+    void onVoiceNameChanged(const QString &voiceName);
+
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;

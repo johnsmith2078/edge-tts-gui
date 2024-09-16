@@ -173,6 +173,27 @@
     <string>💾 保存</string>
    </property>
   </widget>
+  <widget class="QGroupBox" name="groupBoxOtherVoice">
+   <property name="geometry">
+    <rect>
+     <x>430</x>
+     <y>360</y>
+     <width>291</width>
+     <height>65</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>其他音色</string>
+   </property>
+   <layout class="QHBoxLayout" name="horizontalLayout_2">
+    <item>
+     <widget class="QComboBox" name="comboBoxLanguage"/>
+    </item>
+    <item>
+     <widget class="QComboBox" name="comboBoxVoiceName"/>
+    </item>
+   </layout>
+  </widget>
  </widget>
  <resources/>
  <connections>

@@ -1,0 +1,318 @@
+Afrikaans(South Africa)	Adri	af-ZA, AdriNeural
+Afrikaans(South Africa)	Willem	af-ZA, WillemNeural
+Albanian(Albania)	Anila	sq-AL, AnilaNeural
+Albanian(Albania)	Ilir	sq-AL, IlirNeural
+Amharic(Ethiopia)	Ameha	am-ET, AmehaNeural
+Amharic(Ethiopia)	Mekdes	am-ET, MekdesNeural
+Arabic(Algeria)	Amina	ar-DZ, AminaNeural
+Arabic(Algeria)	Ismael	ar-DZ, IsmaelNeural
+Arabic(Bahrain)	Ali	ar-BH, AliNeural
+Arabic(Bahrain)	Laila	ar-BH, LailaNeural
+Arabic(Egypt)	Salma	ar-EG, SalmaNeural
+Arabic(Egypt)	Shakir	ar-EG, ShakirNeural
+Arabic(Iraq)	Bassel	ar-IQ, BasselNeural
+Arabic(Iraq)	Rana	ar-IQ, RanaNeural
+Arabic(Jordan)	Sana	ar-JO, SanaNeural
+Arabic(Jordan)	Taim	ar-JO, TaimNeural
+Arabic(Kuwait)	Fahed	ar-KW, FahedNeural
+Arabic(Kuwait)	Noura	ar-KW, NouraNeural
+Arabic(Lebanon)	Layla	ar-LB, LaylaNeural
+Arabic(Lebanon)	Rami	ar-LB, RamiNeural
+Arabic(Libya)	Iman	ar-LY, ImanNeural
+Arabic(Libya)	Omar	ar-LY, OmarNeural
+Arabic(Morocco)	Jamal	ar-MA, JamalNeural
+Arabic(Morocco)	Mouna	ar-MA, MounaNeural
+Arabic(Oman)	Abdullah	ar-OM, AbdullahNeural
+Arabic(Oman)	Aysha	ar-OM, AyshaNeural
+Arabic(Qatar)	Amal	ar-QA, AmalNeural
+Arabic(Qatar)	Moaz	ar-QA, MoazNeural
+Arabic(Saudi Arabia)	Hamed	ar-SA, HamedNeural
+Arabic(Saudi Arabia)	Zariyah	ar-SA, ZariyahNeural
+Arabic(Syria)	Amany	ar-SY, AmanyNeural
+Arabic(Syria)	Laith	ar-SY, LaithNeural
+Arabic(Tunisia)	Hedi	ar-TN, HediNeural
+Arabic(Tunisia)	Reem	ar-TN, ReemNeural
+Arabic(United Arab Emirates)	Fatima	ar-AE, FatimaNeural
+Arabic(United Arab Emirates)	Hamdan	ar-AE, HamdanNeural
+Arabic(Yemen)	Maryam	ar-YE, MaryamNeural
+Arabic(Yemen)	Saleh	ar-YE, SalehNeural
+Azerbaijani(Azerbaijan)	Babek	az-AZ, BabekNeural
+Azerbaijani(Azerbaijan)	Banu	az-AZ, BanuNeural
+Bangla(Bangladesh)	Nabanita	bn-BD, NabanitaNeural
+Bangla(Bangladesh)	Pradeep	bn-BD, PradeepNeural
+Bangla(India)	Bashkar	bn-IN, BashkarNeural
+Bengali(India)	Tanishaa	bn-IN, TanishaaNeural
+Bosnian(Bosnia)	Goran	bs-BA, GoranNeural
+Bosnian(Bosnia)	Vesna	bs-BA, VesnaNeural
+Bulgarian(Bulgaria)	Borislav	bg-BG, BorislavNeural
+Bulgarian(Bulgaria)	Kalina	bg-BG, KalinaNeural
+Burmese(Myanmar)	Nilar	my-MM, NilarNeural
+Burmese(Myanmar)	Thiha	my-MM, ThihaNeural
+Catalan(Spain)	Enric	ca-ES, EnricNeural
+Catalan(Spain)	Joana	ca-ES, JoanaNeural
+Chinese(Cantonese Traditional)	HiuGaai	zh-HK, HiuGaaiNeural
+Chinese(Hong Kong)	HiuMaan	zh-HK, HiuMaanNeural
+Chinese(Hong Kong)	WanLung	zh-HK, WanLungNeural
+Chinese(Mainland)	Xiaoxiao	zh-CN, XiaoxiaoNeural
+Chinese(Mainland)	Xiaoyi	zh-CN, XiaoyiNeural
+Chinese(Mainland)	Yunjian	zh-CN, YunjianNeural
+Chinese(Mainland)	Yunxi	zh-CN, YunxiNeural
+Chinese(Mainland)	Yunxia	zh-CN, YunxiaNeural
+Chinese(Mainland)	Yunyang	zh-CN, YunyangNeural
+Chinese(Northeastern Mandarin)	Xiaobei	zh-CN-liaoning, XiaobeiNeural
+Chinese(Taiwan)	HsiaoChen	zh-TW, HsiaoChenNeural
+Chinese(Taiwan)	YunJhe	zh-TW, YunJheNeural
+Chinese(Taiwanese Mandarin)	HsiaoYu	zh-TW, HsiaoYuNeural
+Chinese(Zhongyuan Mandarin Shaanxi)	Xiaoni	zh-CN-shaanxi, XiaoniNeural
+Croatian(Croatia)	Gabrijela	hr-HR, GabrijelaNeural
+Croatian(Croatia)	Srecko	hr-HR, SreckoNeural
+Czech(Czech)	Antonin	cs-CZ, AntoninNeural
+Czech(Czech)	Vlasta	cs-CZ, VlastaNeural
+Danish(Denmark)	Christel	da-DK, ChristelNeural
+Danish(Denmark)	Jeppe	da-DK, JeppeNeural
+Dutch(Belgium)	Arnaud	nl-BE, ArnaudNeural
+Dutch(Belgium)	Dena	nl-BE, DenaNeural
+Dutch(Netherlands)	Colette	nl-NL, ColetteNeural
+Dutch(Netherlands)	Fenna	nl-NL, FennaNeural
+Dutch(Netherlands)	Maarten	nl-NL, MaartenNeural
+English(Australia)	Natasha	en-AU, NatashaNeural
+English(Australia)	William	en-AU, WilliamNeural
+English(Canada)	Clara	en-CA, ClaraNeural
+English(Canada)	Liam	en-CA, LiamNeural
+English(Hongkong)	Sam	en-HK, SamNeural
+English(Hongkong)	Yan	en-HK, YanNeural
+English(India)	Neerja	en-IN, NeerjaExpressiveNeural
+English(India)	Neerja	en-IN, NeerjaNeural
+English(India)	Prabhat	en-IN, PrabhatNeural
+English(Ireland)	Connor	en-IE, ConnorNeural
+English(Ireland)	Emily	en-IE, EmilyNeural
+English(Kenya)	Asilia	en-KE, AsiliaNeural
+English(Kenya)	Chilemba	en-KE, ChilembaNeural
+English(New Zealand)	Mitchell	en-NZ, MitchellNeural
+English(New Zealand)	Molly	en-NZ, MollyNeural
+English(Nigeria)	Abeo	en-NG, AbeoNeural
+English(Nigeria)	Ezinne	en-NG, EzinneNeural
+English(Philippines)	James	en-PH, JamesNeural
+English(Philippines)	Rosa	en-PH, RosaNeural
+English(Singapore)	Luna	en-SG, LunaNeural
+English(Singapore)	Wayne	en-SG, WayneNeural
+English(South Africa)	Leah	en-ZA, LeahNeural
+English(South Africa)	Luke	en-ZA, LukeNeural
+English(Tanzania)	Elimu	en-TZ, ElimuNeural
+English(Tanzania)	Imani	en-TZ, ImaniNeural
+English(United Kingdom)	Libby	en-GB, LibbyNeural
+English(United Kingdom)	Maisie	en-GB, MaisieNeural
+English(United Kingdom)	Ryan	en-GB, RyanNeural
+English(United Kingdom)	Sonia	en-GB, SoniaNeural
+English(United Kingdom)	Thomas	en-GB, ThomasNeural
+English(United States)	AvaMultilingual	en-US, AvaMultilingualNeural
+English(United States)	AndrewMultilingual	en-US, AndrewMultilingualNeural
+English(United States)	EmmaMultilingual	en-US, EmmaMultilingualNeural
+English(United States)	BrianMultilingual	en-US, BrianMultilingualNeural
+English(United States)	Ava	en-US, AvaNeural
+English(United States)	Andrew	en-US, AndrewNeural
+English(United States)	Emma	en-US, EmmaNeural
+English(United States)	Brian	en-US, BrianNeural
+English(United States)	Ana	en-US, AnaNeural
+English(United States)	Aria	en-US, AriaNeural
+English(United States)	Christopher	en-US, ChristopherNeural
+English(United States)	Eric	en-US, EricNeural
+English(United States)	Guy	en-US, GuyNeural
+English(United States)	Jenny	en-US, JennyNeural
+English(United States)	Michelle	en-US, MichelleNeural
+English(United States)	Roger	en-US, RogerNeural
+English(United States)	Steffan	en-US, SteffanNeural
+Estonian(Estonia)	Anu	et-EE, AnuNeural
+Estonian(Estonia)	Kert	et-EE, KertNeural
+Filipino(Philippines)	Angelo	fil-PH, AngeloNeural
+Filipino(Philippines)	Blessica	fil-PH, BlessicaNeural
+Finnish(Finland)	Harri	fi-FI, HarriNeural
+Finnish(Finland)	Noora	fi-FI, NooraNeural
+French(Belgium)	Charline	fr-BE, CharlineNeural
+French(Belgium)	Gerard	fr-BE, GerardNeural
+French(Canada)	Thierry	fr-CA, ThierryNeural
+French(Canada)	Antoine	fr-CA, AntoineNeural
+French(Canada)	Jean	fr-CA, JeanNeural
+French(Canada)	Sylvie	fr-CA, SylvieNeural
+French(France)	VivienneMultilingual	fr-FR, VivienneMultilingualNeural
+French(France)	RemyMultilingual	fr-FR, RemyMultilingualNeural
+French(France)	Denise	fr-FR, DeniseNeural
+French(France)	Eloise	fr-FR, EloiseNeural
+French(France)	Henri	fr-FR, HenriNeural
+French(Switzerland)	Ariane	fr-CH, ArianeNeural
+French(Switzerland)	Fabrice	fr-CH, FabriceNeural
+Galician(Spain)	Roi	gl-ES, RoiNeural
+Galician(Spain)	Sabela	gl-ES, SabelaNeural
+Georgian(Georgia)	Eka	ka-GE, EkaNeural
+Georgian(Georgia)	Giorgi	ka-GE, GiorgiNeural
+German(Austria)	Ingrid	de-AT, IngridNeural
+German(Austria)	Jonas	de-AT, JonasNeural
+German(Germany)	SeraphinaMultilingual	de-DE, SeraphinaMultilingualNeural
+German(Germany)	FlorianMultilingual	de-DE, FlorianMultilingualNeural
+German(Germany)	Amala	de-DE, AmalaNeural
+German(Germany)	Conrad	de-DE, ConradNeural
+German(Germany)	Katja	de-DE, KatjaNeural
+German(Germany)	Killian	de-DE, KillianNeural
+German(Switzerland)	Jan	de-CH, JanNeural
+German(Switzerland)	Leni	de-CH, LeniNeural
+Greek(Greece)	Athina	el-GR, AthinaNeural
+Greek(Greece)	Nestoras	el-GR, NestorasNeural
+Gujarati(India)	Dhwani	gu-IN, DhwaniNeural
+Gujarati(India)	Niranjan	gu-IN, NiranjanNeural
+Hebrew(Israel)	Avri	he-IL, AvriNeural
+Hebrew(Israel)	Hila	he-IL, HilaNeural
+Hindi(India)	Madhur	hi-IN, MadhurNeural
+Hindi(India)	Swara	hi-IN, SwaraNeural
+Hungarian(Hungary)	Noemi	hu-HU, NoemiNeural
+Hungarian(Hungary)	Tamas	hu-HU, TamasNeural
+Icelandic(Iceland)	Gudrun	is-IS, GudrunNeural
+Icelandic(Iceland)	Gunnar	is-IS, GunnarNeural
+Indonesian(Indonesia)	Ardi	id-ID, ArdiNeural
+Indonesian(Indonesia)	Gadis	id-ID, GadisNeural
+Irish(Ireland)	Colm	ga-IE, ColmNeural
+Irish(Ireland)	Orla	ga-IE, OrlaNeural
+Italian(Italy)	Giuseppe	it-IT, GiuseppeNeural
+Italian(Italy)	Diego	it-IT, DiegoNeural
+Italian(Italy)	Elsa	it-IT, ElsaNeural
+Italian(Italy)	Isabella	it-IT, IsabellaNeural
+Japanese(Japan)	Keita	ja-JP, KeitaNeural
+Japanese(Japan)	Nanami	ja-JP, NanamiNeural
+Javanese(Indonesia)	Dimas	jv-ID, DimasNeural
+Javanese(Indonesia)	Siti	jv-ID, SitiNeural
+Kannada(India)	Gagan	kn-IN, GaganNeural
+Kannada(India)	Sapna	kn-IN, SapnaNeural
+Kazakh(Kazakhstan)	Aigul	kk-KZ, AigulNeural
+Kazakh(Kazakhstan)	Daulet	kk-KZ, DauletNeural
+Khmer(Cambodia)	Piseth	km-KH, PisethNeural
+Khmer(Cambodia)	Sreymom	km-KH, SreymomNeural
+Korean(Korea)	Hyunsu	ko-KR, HyunsuNeural
+Korean(Korea)	InJoon	ko-KR, InJoonNeural
+Korean(Korea)	SunHi	ko-KR, SunHiNeural
+Lao(Laos)	Chanthavong	lo-LA, ChanthavongNeural
+Lao(Laos)	Keomany	lo-LA, KeomanyNeural
+Latvian(Latvia)	Everita	lv-LV, EveritaNeural
+Latvian(Latvia)	Nils	lv-LV, NilsNeural
+Lithuanian(Lithuania)	Leonas	lt-LT, LeonasNeural
+Lithuanian(Lithuania)	Ona	lt-LT, OnaNeural
+Macedonian(Republic of North Macedonia)	Aleksandar	mk-MK, AleksandarNeural
+Macedonian(Republic of North Macedonia)	Marija	mk-MK, MarijaNeural
+Malay(Malaysia)	Osman	ms-MY, OsmanNeural
+Malay(Malaysia)	Yasmin	ms-MY, YasminNeural
+Malayalam(India)	Midhun	ml-IN, MidhunNeural
+Malayalam(India)	Sobhana	ml-IN, SobhanaNeural
+Maltese(Malta)	Grace	mt-MT, GraceNeural
+Maltese(Malta)	Joseph	mt-MT, JosephNeural
+Marathi(India)	Aarohi	mr-IN, AarohiNeural
+Marathi(India)	Manohar	mr-IN, ManoharNeural
+Mongolian(Mongolia)	Bataa	mn-MN, BataaNeural
+Mongolian(Mongolia)	Yesui	mn-MN, YesuiNeural
+Nepali(Nepal)	Hemkala	ne-NP, HemkalaNeural
+Nepali(Nepal)	Sagar	ne-NP, SagarNeural
+Norwegian(Bokmål Norway)	Finn	nb-NO, FinnNeural
+Norwegian(Bokmål, Norway)	Pernille	nb-NO, PernilleNeural
+Pashto(Afghanistan)	GulNawaz	ps-AF, GulNawazNeural
+Pashto(Afghanistan)	Latifa	ps-AF, LatifaNeural
+Persian(Iran)	Dilara	fa-IR, DilaraNeural
+Persian(Iran)	Farid	fa-IR, FaridNeural
+Polish(Poland)	Marek	pl-PL, MarekNeural
+Polish(Poland)	Zofia	pl-PL, ZofiaNeural
+Portuguese(Brazil)	Thalita	pt-BR, ThalitaNeural
+Portuguese(Brazil)	Antonio	pt-BR, AntonioNeural
+Portuguese(Brazil)	Francisca	pt-BR, FranciscaNeural
+Portuguese(Portugal)	Duarte	pt-PT, DuarteNeural
+Portuguese(Portugal)	Raquel	pt-PT, RaquelNeural
+Romanian(Romania)	Alina	ro-RO, AlinaNeural
+Romanian(Romania)	Emil	ro-RO, EmilNeural
+Russian(Russia)	Dmitry	ru-RU, DmitryNeural
+Russian(Russia)	Svetlana	ru-RU, SvetlanaNeural
+Serbian(Serbia)	Nicholas	sr-RS, NicholasNeural
+Serbian(Serbia)	Sophie	sr-RS, SophieNeural
+Sinhala(Sri Lanka)	Sameera	si-LK, SameeraNeural
+Sinhala(Sri Lanka)	Thilini	si-LK, ThiliniNeural
+Slovak(Slovakia)	Lukas	sk-SK, LukasNeural
+Slovak(Slovakia)	Viktoria	sk-SK, ViktoriaNeural
+Slovenian(Slovenia)	Petra	sl-SI, PetraNeural
+Slovenian(Slovenia)	Rok	sl-SI, RokNeural
+Somali(Somalia)	Muuse	so-SO, MuuseNeural
+Somali(Somalia)	Ubax	so-SO, UbaxNeural
+Spanish(Argentina)	Elena	es-AR, ElenaNeural
+Spanish(Argentina)	Tomas	es-AR, TomasNeural
+Spanish(Bolivia)	Marcelo	es-BO, MarceloNeural
+Spanish(Bolivia)	Sofia	es-BO, SofiaNeural
+Spanish(Chile)	Catalina	es-CL, CatalinaNeural
+Spanish(Chile)	Lorenzo	es-CL, LorenzoNeural
+Spanish(Colombia)	Ximena	es-ES, XimenaNeural
+Spanish(Colombia)	Gonzalo	es-CO, GonzaloNeural
+Spanish(Colombia)	Salome	es-CO, SalomeNeural
+Spanish(Costa Rica)	Juan	es-CR, JuanNeural
+Spanish(Costa Rica)	Maria	es-CR, MariaNeural
+Spanish(Cuba)	Belkys	es-CU, BelkysNeural
+Spanish(Cuba)	Manuel	es-CU, ManuelNeural
+Spanish(Dominican Republic)	Emilio	es-DO, EmilioNeural
+Spanish(Dominican Republic)	Ramona	es-DO, RamonaNeural
+Spanish(Ecuador)	Andrea	es-EC, AndreaNeural
+Spanish(Ecuador)	Luis	es-EC, LuisNeural
+Spanish(El Salvador)	Lorena	es-SV, LorenaNeural
+Spanish(El Salvador)	Rodrigo	es-SV, RodrigoNeural
+Spanish(Equatorial Guinea)	Javier	es-GQ, JavierNeural
+Spanish(Equatorial Guinea)	Teresa	es-GQ, TeresaNeural
+Spanish(Guatemala)	Andres	es-GT, AndresNeural
+Spanish(Guatemala)	Marta	es-GT, MartaNeural
+Spanish(Honduras)	Carlos	es-HN, CarlosNeural
+Spanish(Honduras)	Karla	es-HN, KarlaNeural
+Spanish(Mexico)	Dalia	es-MX, DaliaNeural
+Spanish(Mexico)	Jorge	es-MX, JorgeNeural
+Spanish(Nicaragua)	Federico	es-NI, FedericoNeural
+Spanish(Nicaragua)	Yolanda	es-NI, YolandaNeural
+Spanish(Panama)	Margarita	es-PA, MargaritaNeural
+Spanish(Panama)	Roberto	es-PA, RobertoNeural
+Spanish(Paraguay)	Mario	es-PY, MarioNeural
+Spanish(Paraguay)	Tania	es-PY, TaniaNeural
+Spanish(Peru)	Alex	es-PE, AlexNeural
+Spanish(Peru)	Camila	es-PE, CamilaNeural
+Spanish(Puerto Rico)	Karina	es-PR, KarinaNeural
+Spanish(Puerto Rico)	Victor	es-PR, VictorNeural
+Spanish(Spain)	Alvaro	es-ES, AlvaroNeural
+Spanish(Spain)	Elvira	es-ES, ElviraNeural
+Spanish(United States)	Alonso	es-US, AlonsoNeural
+Spanish(United States)	Paloma	es-US, PalomaNeural
+Spanish(Uruguay)	Mateo	es-UY, MateoNeural
+Spanish(Uruguay)	Valentina	es-UY, ValentinaNeural
+Spanish(Venezuela)	Paola	es-VE, PaolaNeural
+Spanish(Venezuela)	Sebastian	es-VE, SebastianNeural
+Sundanese(Indonesia)	Jajang	su-ID, JajangNeural
+Sundanese(Indonesia)	Tuti	su-ID, TutiNeural
+Swahili(Kenya)	Rafiki	sw-KE, RafikiNeural
+Swahili(Kenya)	Zuri	sw-KE, ZuriNeural
+Swahili(Tanzania)	Daudi	sw-TZ, DaudiNeural
+Swahili(Tanzania)	Rehema	sw-TZ, RehemaNeural
+Swedish(Sweden)	Mattias	sv-SE, MattiasNeural
+Swedish(Sweden)	Sofie	sv-SE, SofieNeural
+Tamil(India)	Pallavi	ta-IN, PallaviNeural
+Tamil(India)	Valluvar	ta-IN, ValluvarNeural
+Tamil(Malaysia)	Kani	ta-MY, KaniNeural
+Tamil(Malaysia)	Surya	ta-MY, SuryaNeural
+Tamil(Singapore)	Anbu	ta-SG, AnbuNeural
+Tamil(Singapore)	Venba	ta-SG, VenbaNeural
+Tamil(Sri Lanka)	Kumar	ta-LK, KumarNeural
+Tamil(Sri Lanka)	Saranya	ta-LK, SaranyaNeural
+Telugu(India)	Mohan	te-IN, MohanNeural
+Telugu(India)	Shruti	te-IN, ShrutiNeural
+Thai(Thailand)	Niwat	th-TH, NiwatNeural
+Thai(Thailand)	Premwadee	th-TH, PremwadeeNeural
+Turkish(Turkey)	Ahmet	tr-TR, AhmetNeural
+Turkish(Turkey)	Emel	tr-TR, EmelNeural
+Ukrainian(Ukraine)	Ostap	uk-UA, OstapNeural
+Ukrainian(Ukraine)	Polina	uk-UA, PolinaNeural
+Urdu(India)	Gul	ur-IN, GulNeural
+Urdu(India)	Salman	ur-IN, SalmanNeural
+Urdu(Pakistan)	Asad	ur-PK, AsadNeural
+Urdu(Pakistan)	Uzma	ur-PK, UzmaNeural
+Uzbek(Uzbekistan)	Madina	uz-UZ, MadinaNeural
+Uzbek(Uzbekistan)	Sardor	uz-UZ, SardorNeural
+Vietnamese(Vietnam)	HoaiMy	vi-VN, HoaiMyNeural
+Vietnamese(Vietnam)	NamMinh	vi-VN, NamMinhNeural
+Welsh(United Kingdom)	Aled	cy-GB, AledNeural
+Welsh(United Kingdom)	Nia	cy-GB, NiaNeural
+Zulu(South Africa)	Thando	zu-ZA, ThandoNeural
+Zulu(South Africa)	Themba	zu-ZA, ThembaNeural

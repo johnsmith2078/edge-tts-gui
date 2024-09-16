@@ -22,7 +22,7 @@ FORMS += \
 
 RC_ICONS = favicon.ico
 
-VERSION = 0.6.0
+VERSION = 0.7.0
 
 win32: LIBS += -luser32
 
@@ -30,3 +30,9 @@ win32: LIBS += -luser32
 qnx: target.path = /tmp/$${TARGET}/bin
 else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
+
+DISTFILES += \
+    voice_list.tsv
+
+RESOURCES += \
+    resources.qrc

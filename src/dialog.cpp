@@ -22,10 +22,15 @@ Dialog::Dialog(QWidget *parent)
         ui->pushButtonSave->setDisabled(false);
     });
 
+    connect(ui->comboBoxLanguage, &QComboBox::currentTextChanged, this, &Dialog::onLanguageChanged);
+    connect(ui->comboBoxVoiceName, &QComboBox::currentTextChanged, this, &Dialog::onVoiceNameChanged);
+
     setAcceptDrops(true);
     ui->plainTextEditContent->setAcceptDrops(false);
 
     ui->plainTextEditContent->installEventFilter(this);
+
+    loadVoiceData();
 }
 
 Dialog::~Dialog()
@@ -210,4 +215,69 @@ void Dialog::on_radioButtonYunyang_clicked(bool checked)
     if (checked) {
         voice = "zh-CN, YunyangNeural";
     }
+}
+
+void Dialog::loadVoiceData()
+{
+    QFile file(":/voice_list.tsv");
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+    {
+        qDebug() << "Cannot open file!";
+        return;
+    }
+
+    QTextStream in(&file);
+
+    while (!in.atEnd())
+    {
+        QString line = in.readLine();
+        QStringList fields = line.split('\t');
+
+        if (fields.size() >= 3)
+        {
+            QString language = fields[0];
+            QString voiceName = fields[1];
+            QString code = fields[2];
+
+            data[language][voiceName] = code;
+        }
+    }
+
+    // 填充语言的ComboBox
+    ui->comboBoxLanguage->addItems(data.keys());
+
+    // 设置初始的语言
+    if (!data.isEmpty())
+    {
+        QString initialLanguage = data.keys().first();
+        ui->comboBoxLanguage->setCurrentText(initialLanguage);
+        onLanguageChanged(initialLanguage);
+    }
+}
+
+void Dialog::onLanguageChanged(const QString &language)
+{
+    // 清空语音名的ComboBox
+    ui->comboBoxVoiceName->clear();
+
+    // 获取当前语言的语音名列表
+    QMap<QString, QString> voiceMap = data.value(language);
+
+    if (!voiceMap.isEmpty())
+    {
+        ui->comboBoxVoiceName->addItems(voiceMap.keys());
+
+        // 设置初始的语音名称
+        QString initialVoiceName = voiceMap.keys().first();
+        ui->comboBoxVoiceName->setCurrentText(initialVoiceName);
+        onVoiceNameChanged(initialVoiceName);
+    }
+}
+
+void Dialog::onVoiceNameChanged(const QString &voiceName)
+{
+    QString language = ui->comboBoxLanguage->currentText();
+    QString code = data.value(language).value(voiceName);
+
+    voice = code;
 }
