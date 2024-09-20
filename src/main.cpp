@@ -2,7 +2,13 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <thread>
+#include <chrono>
 #include <windows.h>
+
+void sleepms(uint64_t ms) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+}
 
 static HHOOK g_hook;
 
@@ -24,8 +30,9 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (key == VK_F9) {
             // 模拟 Ctrl+C 组合键按下
             simulateCtrlC();
-            Sleep(100);
+            sleepms(100);
             QString copiedText = QApplication::clipboard()->text(); // 获取剪贴板文本
+            sleepms(100);
             Dialog::getInstance().playText(copiedText);
         }
     }

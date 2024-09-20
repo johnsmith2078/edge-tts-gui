@@ -31,6 +31,8 @@ Dialog::Dialog(QWidget *parent)
     ui->plainTextEditContent->installEventFilter(this);
 
     loadVoiceData();
+
+    voice = "zh-CN, XiaoyiNeural";
 }
 
 Dialog::~Dialog()
@@ -40,13 +42,9 @@ Dialog::~Dialog()
 
 void Dialog::playText(const QString& text)
 {
-    ui->pushButtonPlay->setDisabled(true);
-    ui->pushButtonPlay->setText("⏳合成中...");
-    ui->pushButtonStop->setEnabled(true);
-
-    setCommunicate(text, voice, "");
-
-    emit send();
+    emit ui->pushButtonStop->clicked(true);
+    ui->plainTextEditContent->setPlainText(text);
+    emit ui->pushButtonPlay->clicked(true);
 }
 
 bool Dialog::eventFilter(QObject *obj, QEvent *event)

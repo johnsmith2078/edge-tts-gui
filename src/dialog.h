@@ -65,7 +65,7 @@ private:
     Communicate m_comm;
     QString m_lastText;
     QString m_lastVoice;
-    QString voice = "zh-CN, XiaoyiNeural";
+    QString voice;
     QString lastDir = "";
 
 private:
