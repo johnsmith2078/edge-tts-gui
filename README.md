@@ -10,4 +10,6 @@
 
 ![interface](cover.jpg)
 
-reference: [edge-tts](https://github.com/rany2/edge-tts)
+reference: 
+- [edge-tts](https://github.com/rany2/edge-tts)
+- [chineseocr_lite](https://github.com/DayBreak-u/chineseocr_lite)
