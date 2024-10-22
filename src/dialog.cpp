@@ -2,6 +2,7 @@
 #include "ui_dialog.h"
 #include <QFileDialog>
 #include <QMimeData>
+#include <QTimer>
 
 Dialog::Dialog(QWidget *parent)
     : QDialog(parent)
@@ -42,9 +43,20 @@ Dialog::~Dialog()
 
 void Dialog::playText(const QString& text)
 {
-    emit ui->pushButtonStop->clicked(true);
     ui->plainTextEditContent->setPlainText(text);
     emit ui->pushButtonPlay->clicked(true);
+
+    QTimer::singleShot(3000, [this, text](){
+        if (manuallyStopped) {
+            return;
+        }
+        if (!m_comm.isPlaying() && !ui->pushButtonStop->isEnabled()) {
+            qDebug() << "Reclicked";
+            playText(text);
+        } else {
+            setManuallyStopped(true);
+        }
+    });
 }
 
 bool Dialog::eventFilter(QObject *obj, QEvent *event)
@@ -131,6 +143,7 @@ void Dialog::on_pushButtonPlay_clicked()
 void Dialog::on_pushButtonStop_clicked()
 {
     emit stop();
+    setManuallyStopped(true);
 }
 
 void Dialog::on_pushButtonSave_clicked()
@@ -167,6 +180,10 @@ void Dialog::on_pushButtonSave_clicked()
     emit send();
 }
 
+void Dialog::setManuallyStopped(bool manuallyStopped)
+{
+    this->manuallyStopped = manuallyStopped;
+}
 
 void Dialog::on_radioButtonXiaoxiao_clicked(bool checked)
 {

@@ -69,6 +69,11 @@ void Communicate::setDuplicated(bool dup)
     m_audioDataReceived.clear();
 }
 
+bool Communicate::isPlaying()
+{
+    return m_player->playbackState() == QMediaPlayer::PlayingState;
+}
+
 
 void Communicate::start() {
     m_playStarted = false;

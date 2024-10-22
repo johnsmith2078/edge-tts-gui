@@ -68,6 +68,11 @@ private:
     QString voice;
     QString lastDir = "";
 
+    bool manuallyStopped = true;
+
+public:
+    void setManuallyStopped(bool manuallyStopped);
+
 private:
     void loadVoiceData();
 

@@ -38,6 +38,8 @@ public:
 
     void setDuplicated(bool dup);
 
+    bool isPlaying();
+
 public slots:
     void start();
 
