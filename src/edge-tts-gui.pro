@@ -1,4 +1,4 @@
-QT += core gui websockets multimedia core5compat
+QT += core gui websockets multimedia network
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     communicate.cpp \
     main.cpp \
-    dialog.cpp
+    dialog.cpp \
+    tts.cpp
 
 HEADERS += \
     communicate.h \
-    dialog.h
+    dialog.h\
+    tts.h
 
 FORMS += \
     dialog.ui

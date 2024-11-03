@@ -5,6 +5,7 @@
 #include <QKeyEvent>
 #include <QMap>
 #include "communicate.h"
+#include "tts.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -38,6 +39,8 @@ private:
 
     void setCommunicate(const QString& text, const QString& voice, const QString& fileName);
 
+    bool isUseGPTSoVITS();
+
 public:
     void playText(const QString& text);
 
@@ -63,6 +66,7 @@ private slots:
 private:
     Ui::Dialog *ui;
     Communicate m_comm;
+    TextToSpeech m_tts;
     QString m_lastText;
     QString m_lastVoice;
     QString voice;
@@ -82,6 +86,8 @@ private slots:
     void onLanguageChanged(const QString &language);
 
     void onVoiceNameChanged(const QString &voiceName);
+
+    void onPlayFinished();
 
 
 protected:

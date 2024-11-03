@@ -12,12 +12,10 @@ Dialog::Dialog(QWidget *parent)
     ui->setupUi(this);
     // connect this->send() to this->m_comm.start()
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
-    connect(&m_comm, &Communicate::finished, [&]() {
-        ui->pushButtonPlay->setDisabled(false);
-        ui->pushButtonPlay->setText("▶️ 播放");
-        ui->pushButtonStop->setEnabled(false);
-    });
+    connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
+    connect(&m_tts, &TextToSpeech::finished, this, &Dialog::onPlayFinished);
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
+    connect(this, &Dialog::stop, &m_tts, &TextToSpeech::stop);
 
     connect(&m_comm, &Communicate::saveFinished, [&]() {
         ui->pushButtonSave->setDisabled(false);
@@ -39,6 +37,13 @@ Dialog::Dialog(QWidget *parent)
 Dialog::~Dialog()
 {
     delete ui;
+}
+
+void Dialog::onPlayFinished()
+{
+    ui->pushButtonPlay->setDisabled(false);
+    ui->pushButtonPlay->setText("▶️ 播放");
+    ui->pushButtonStop->setEnabled(false);
 }
 
 void Dialog::playText(const QString& text)
@@ -123,6 +128,25 @@ void Dialog::setCommunicate(const QString& text, const QString& voice, const QSt
     m_lastVoice = voice;
 }
 
+bool Dialog::isUseGPTSoVITS()
+{
+    return ui->checkBoxUseGPTSoVITS->isChecked();
+}
+
+bool isValidAudioFile(const QString &filePath) {
+    // 检查文件扩展名
+    QStringList validExtensions = {"mp3", "wav", "ogg", "flac", "aac"};
+    QFileInfo fileInfo(filePath);
+    if (!validExtensions.contains(fileInfo.suffix().toLower())) {
+        return false;
+    }
+
+    // 尝试加载文件
+    QMediaPlayer player;
+    player.setSource(QUrl::fromLocalFile(filePath));
+    return player.error() == QMediaPlayer::NoError;
+}
+
 void Dialog::on_pushButtonPlay_clicked()
 {
     QString text = ui->plainTextEditContent->toPlainText();
@@ -134,9 +158,18 @@ void Dialog::on_pushButtonPlay_clicked()
     ui->pushButtonPlay->setText("⏳合成中...");
     ui->pushButtonStop->setEnabled(true);
 
-    setCommunicate(text, voice, "");
+    if (!isUseGPTSoVITS()) {
+        setCommunicate(text, voice, "");
+        emit send();
+        return;
+    }
 
-    emit send();
+    QString refAudioFilename = ui->lineEditRefAudio->text();
+    if (!isValidAudioFile(refAudioFilename)) {
+        return;
+    }
+
+    m_tts.getTTS(text, refAudioFilename);
 }
 
 void Dialog::on_pushButtonStop_clicked()
