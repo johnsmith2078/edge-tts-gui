@@ -328,3 +328,12 @@ void Dialog::onVoiceNameChanged(const QString &voiceName)
 
     voice = code;
 }
+
+void Dialog::on_pushButtonSelectRefAudio_clicked()
+{
+    QString filePath = QFileDialog::getOpenFileName(this, tr("Select Audio File"), "", tr("Audio Files (*.mp3 *.wav *.ogg *.flac *.aac)"));
+    if (!filePath.isEmpty()) {
+        ui->lineEditRefAudio->setText(filePath);
+    }
+}
+

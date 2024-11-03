@@ -63,6 +63,8 @@ private slots:
 
     void on_pushButtonSave_clicked();
 
+    void on_pushButtonSelectRefAudio_clicked();
+
 private:
     Ui::Dialog *ui;
     Communicate m_comm;
@@ -88,7 +90,6 @@ private slots:
     void onVoiceNameChanged(const QString &voiceName);
 
     void onPlayFinished();
-
 
 protected:
     bool eventFilter(QObject *obj, QEvent *event) override;
