@@ -47,11 +47,10 @@ void Dialog::playText(const QString& text)
     emit ui->pushButtonPlay->clicked(true);
 
     QTimer::singleShot(3000, [this, text](){
-        if (manuallyStopped) {
+        if (manuallyStopped || text.size() <= 20) {
             return;
         }
         if (!m_comm.isPlaying() && !ui->pushButtonStop->isEnabled()) {
-            qDebug() << "Reclicked";
             playText(text);
         } else {
             setManuallyStopped(true);

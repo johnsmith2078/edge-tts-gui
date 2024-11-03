@@ -102,9 +102,6 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         // 检测到 F9 键
         if (key == VK_F9) {
             Dialog::getInstance().setManuallyStopped(false);
-            // 模拟 Ctrl+C 组合键按下
-            simulateCtrlC();
-            sleepms(100);
             // 检测剪切板内容是否为图片
             const QMimeData *mimeData = QApplication::clipboard()->mimeData();
             if (mimeData->hasImage()) {
@@ -113,6 +110,9 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 Dialog::getInstance().playText(ocrResult);
                 deleteResultFiles();
             } else {
+                // 模拟 Ctrl+C 组合键按下
+                simulateCtrlC();
+                sleepms(100);
                 QString copiedText = QApplication::clipboard()->text(); // 获取剪贴板文本
                 Dialog::getInstance().playText(copiedText);
             }
