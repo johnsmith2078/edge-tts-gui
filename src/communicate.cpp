@@ -1,3 +1,5 @@
+#include <QCryptographicHash>
+
 #include "communicate.h"
 
 // Constants
@@ -10,6 +12,29 @@ const QString VOICE_LIST =
     "https://speech.platform.bing.com/consumer/speech/synthesize/"
     "readaloud/voices/list?trustedclienttoken="
     + TRUSTED_CLIENT_TOKEN;
+
+// 定义常量
+const QString CHROMIUM_FULL_VERSION = "130.0.2849.68";
+
+// 生成 Sec-MS-GEC Token
+QString Communicate::generateSecMsGecToken() {
+    // 获取当前时间戳并转换为 Windows 文件时间格式（1601年起，每 100 纳秒单位）
+    qint64 ticks = (QDateTime::currentDateTimeUtc().toSecsSinceEpoch() + 11644473600) * 10000000;
+
+    // 向下取整到最近的 5 分钟（5 分钟 = 3,000,000,000 * 100 纳秒）
+    ticks -= ticks % 3000000000;
+
+    // 将 ticks 和 TRUSTED_CLIENT_TOKEN 拼接后计算 SHA256 散列值
+    QString strToHash = QString::number(ticks) + TRUSTED_CLIENT_TOKEN;
+    QByteArray hash = QCryptographicHash::hash(strToHash.toUtf8(), QCryptographicHash::Sha256);
+
+    return hash.toHex().toUpper();
+}
+
+// 生成 Sec-MS-GEC-Version
+QString Communicate::generateSecMsGecVersion() {
+    return QString("1-%1").arg(CHROMIUM_FULL_VERSION);
+}
 
 Communicate::Communicate(QObject *parent)
     : QObject(parent)
@@ -83,20 +108,24 @@ void Communicate::start() {
     qsizetype scaleSize = m_text.size() * 500;
     qsizetype minSize = 1024 * 1024;
     qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
-    m_audioDataReceived.resize(defaultSize, 0);    
+    m_audioDataReceived.resize(defaultSize, 0);
 
-    QUrl url(WSS_URL + "&ConnectionId=" + connect_id());
+    // 添加 Sec-MS-GEC 和 Sec-MS-GEC-Version 参数
+    QUrl url(WSS_URL + "&Sec-MS-GEC=" + generateSecMsGecToken() +
+             "&Sec-MS-GEC-Version=" + generateSecMsGecVersion() +
+             "&ConnectionId=" + connect_id());
+
     QNetworkRequest request(url);
 
-    // Set headers
+    // 设置必要的 headers
     request.setRawHeader("Pragma", "no-cache");
     request.setRawHeader("Cache-Control", "no-cache");
     request.setRawHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold");
     request.setRawHeader("Accept-Encoding", "gzip, deflate, br");
     request.setRawHeader("Accept-Language", "en-US,en;q=0.9");
-    request.setRawHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36 Edg/91.0.864.41");
+    request.setRawHeader("User-Agent", ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + CHROMIUM_FULL_VERSION + " Safari/537.36").toUtf8());
 
-    // Open WebSocket connection
+    // 打开 WebSocket 连接
     m_webSocket.open(request);
 }
 

@@ -24,7 +24,7 @@ FORMS += \
 
 RC_ICONS = favicon.ico
 
-VERSION = 0.7.0
+VERSION = 0.9.1
 
 win32: LIBS += -luser32
 

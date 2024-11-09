@@ -104,6 +104,10 @@ private:
     QPair<QMap<QString, QString>, QString> get_headers_and_data(const QString& message);
 
     void removeTrailingZeros(QByteArray &byteArray);
+
+    QString generateSecMsGecToken();
+
+    QString generateSecMsGecVersion();
 };
 
 #endif // COMMUNICATE_H
