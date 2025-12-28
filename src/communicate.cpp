@@ -1,4 +1,5 @@
 #include <QCryptographicHash>
+#include <QDebug>
 
 #include "communicate.h"
 
@@ -47,19 +48,14 @@ Communicate::Communicate(QObject *parent)
     connect(this, &Communicate::finished, [&]() {
         m_webSocket.close();
     });
+    connect(this, &Communicate::stop, this, [this]() {
+        m_stopRequested = true;
+    });
 
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
     m_audioOutput->setVolume(50);
     m_player->setAudioOutput(m_audioOutput);
-
-    QObject::connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
-        if (state != QMediaPlayer::PlayingState || m_hasPlaybackStarted) {
-            return;
-        }
-        m_hasPlaybackStarted = true;
-        emit playbackStarted();
-    });
 
     QObject::connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
         if (position <= 0 || m_hasPlaybackStarted) {
@@ -67,6 +63,15 @@ Communicate::Communicate(QObject *parent)
         }
         m_hasPlaybackStarted = true;
         emit playbackStarted();
+    });
+
+    QObject::connect(m_player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error error, const QString &errorString) {
+        if (error == QMediaPlayer::NoError || m_playbackErrorOccurred) {
+            return;
+        }
+        m_playbackErrorOccurred = true;
+        qDebug() << "Media player error:" << errorString;
+        emit finished();
     });
 
     QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
@@ -120,10 +125,30 @@ bool Communicate::hasPlaybackStarted() const
     return m_hasPlaybackStarted;
 }
 
+bool Communicate::isSynthesisComplete() const
+{
+    return m_synthesisComplete;
+}
+
+qsizetype Communicate::audioBytesReceived() const
+{
+    return m_audioOffset;
+}
+
+bool Communicate::hasPlaybackError() const
+{
+    return m_playbackErrorOccurred;
+}
+
 
 void Communicate::start() {
     m_playStarted = false;
     m_hasPlaybackStarted = false;
+    m_playbackErrorOccurred = false;
+    m_stopRequested = false;
+    m_synthesisComplete = false;
+    m_downloadAudio = false;
+    m_textPartIndex = 0;
     m_audioOffset = 0;
     m_audioDataReceived.clear();
 
@@ -212,6 +237,7 @@ void Communicate::onTextMessageReceived(const QString &message) {
         m_downloadAudio = false;
         m_textPartIndex += ms_maxMessageSize;
         if (m_textPartIndex >= m_text.length()) {
+            m_synthesisComplete = true;
             m_webSocket.close();
         }
         // End of audio data
@@ -268,6 +294,7 @@ void Communicate::play()
     m_player->setSource(QUrl());
     m_audioBuffer.close();
     m_audioBuffer.setBuffer(&m_audioDataReceived);
+    m_audioBuffer.open(QIODevice::ReadOnly);
     m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
     m_player->play();
 }
@@ -277,7 +304,8 @@ void Communicate::forcePlay()
     // qDebug() << "force play";
     m_player->setSource(QUrl());
     m_audioBuffer.close();
-    m_audioBuffer.setData(m_audioDataReceived);
+    m_audioBuffer.setData(m_audioDataReceived.left(m_audioOffset));
+    m_audioBuffer.open(QIODevice::ReadOnly);
     m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
     m_player->play();
 }
@@ -286,9 +314,16 @@ void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
     }
-    else if (!m_playStarted && m_audioOffset < ms_startupSize) {
+    else if (m_stopRequested || m_playbackErrorOccurred) {
+        // Do not auto-play if user stopped or playback already failed.
+        return;
+    }
+    else if (!m_playStarted && m_audioOffset > 0 && m_audioOffset < ms_startupSize) {
         forcePlay();
         m_playStarted = true;
+    }
+    else if (!m_playStarted && m_audioOffset == 0) {
+        emit finished();
     }
 }
 

@@ -50,18 +50,21 @@ void Dialog::onPlayFinished()
 
 void Dialog::playText(const QString& text)
 {
-    constexpr int kMaxAutoRetries = 2;
+    constexpr int kMaxAutoRetries = 5;
     m_autoRetryText = text;
     m_autoRetriesRemaining = kMaxAutoRetries;
-    m_autoRetryEnabled = (!manuallyStopped && text.size() > 20);
+    m_autoRetryEnabled = !manuallyStopped;
+    m_lastFinishedAttemptSerial = -1;
     startAutoRetryAttempt();
 }
 
 void Dialog::startAutoRetryAttempt()
 {
+    const int attemptSerial = ++m_autoAttemptSerial;
     ui->plainTextEditContent->setPlainText(m_autoRetryText);
     m_autoAttemptUseGPTSoVITS = isUseGPTSoVITS();
     emit ui->pushButtonPlay->clicked(true);
+    scheduleNoPlaybackWatchdog(attemptSerial, -1);
 }
 
 void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
@@ -75,8 +78,17 @@ void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
         return;
     }
 
+    if (m_lastFinishedAttemptSerial == m_autoAttemptSerial) {
+        return;
+    }
+    m_lastFinishedAttemptSerial = m_autoAttemptSerial;
+
     const bool playbackStarted = fromGPTSoVITS ? m_tts.hasPlaybackStarted() : m_comm.hasPlaybackStarted();
-    if (playbackStarted) {
+    const bool hasError = fromGPTSoVITS
+        ? (m_tts.hasPlaybackError() || m_tts.hasRequestError() || m_tts.lastAudioByteCount() <= 0)
+        : (m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0);
+    const bool success = playbackStarted && !hasError;
+    if (success) {
         m_autoRetryEnabled = false;
         setManuallyStopped(true);
         return;
@@ -90,6 +102,39 @@ void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
 
     --m_autoRetriesRemaining;
     QTimer::singleShot(200, this, [this]() { startAutoRetryAttempt(); });
+}
+
+void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived)
+{
+    constexpr int kEdgeStartupSize = 8192 * 4;
+    constexpr int kNoPlaybackTimeoutMsEdge = 8000;
+    constexpr int kNoPlaybackTimeoutMsGPT = 20000;
+
+    const int timeoutMs = m_autoAttemptUseGPTSoVITS ? kNoPlaybackTimeoutMsGPT : kNoPlaybackTimeoutMsEdge;
+    QTimer::singleShot(timeoutMs, this, [this, attemptSerial, lastEdgeBytesReceived]() {
+        if (!m_autoRetryEnabled || manuallyStopped || attemptSerial != m_autoAttemptSerial) {
+            return;
+        }
+
+        const bool playbackStarted = m_autoAttemptUseGPTSoVITS ? m_tts.hasPlaybackStarted() : m_comm.hasPlaybackStarted();
+        if (playbackStarted) {
+            return;
+        }
+
+        if (m_autoAttemptUseGPTSoVITS) {
+            emit stop();
+            return;
+        }
+
+        const qsizetype bytesReceived = m_comm.audioBytesReceived();
+        const bool stalled = (lastEdgeBytesReceived >= 0 && bytesReceived == lastEdgeBytesReceived);
+        if (bytesReceived == 0 || bytesReceived >= kEdgeStartupSize || stalled) {
+            emit stop();
+            return;
+        }
+
+        scheduleNoPlaybackWatchdog(attemptSerial, bytesReceived);
+    });
 }
 
 bool Dialog::eventFilter(QObject *obj, QEvent *event)
@@ -203,8 +248,8 @@ void Dialog::on_pushButtonPlay_clicked()
 
 void Dialog::on_pushButtonStop_clicked()
 {
-    emit stop();
     setManuallyStopped(true);
+    emit stop();
 }
 
 void Dialog::on_pushButtonSave_clicked()

@@ -42,6 +42,12 @@ public:
 
     bool hasPlaybackStarted() const;
 
+    bool isSynthesisComplete() const;
+
+    qsizetype audioBytesReceived() const;
+
+    bool hasPlaybackError() const;
+
 public slots:
     void start();
 
@@ -81,6 +87,9 @@ private:
     bool m_downloadAudio = false;
     qsizetype m_textPartIndex;
     QString m_date;
+    bool m_synthesisComplete = false;
+    bool m_stopRequested = false;
+    bool m_playbackErrorOccurred = false;
     bool m_isDuplicated = false;
     QMediaPlayer* m_player;
     QAudioOutput* m_audioOutput;

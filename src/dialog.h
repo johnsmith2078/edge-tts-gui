@@ -79,6 +79,8 @@ private:
     int m_autoRetriesRemaining = 0;
     bool m_autoRetryEnabled = false;
     bool m_autoAttemptUseGPTSoVITS = false;
+    int m_autoAttemptSerial = 0;
+    int m_lastFinishedAttemptSerial = -1;
 
 public:
     void setManuallyStopped(bool manuallyStopped);
@@ -106,6 +108,8 @@ private:
     void startAutoRetryAttempt();
 
     void handleAutoRetryFinished(bool fromGPTSoVITS);
+
+    void scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived);
 }; // class Dialog
 
 #endif // DIALOG_H

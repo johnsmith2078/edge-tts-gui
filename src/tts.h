@@ -28,6 +28,12 @@ public:
 
     bool hasPlaybackStarted() const;
 
+    bool hasPlaybackError() const;
+
+    bool hasRequestError() const;
+
+    qsizetype lastAudioByteCount() const;
+
 private slots:
     void onGetFinished();
 
@@ -41,10 +47,14 @@ signals:
 
 private:
     QNetworkAccessManager *manager;
+    QNetworkReply *m_reply = nullptr;
     QMediaPlayer* player;
     QBuffer *buffer;
     QAudioOutput *audioOutput;
     bool m_hasPlaybackStarted = false;
+    bool m_playbackErrorOccurred = false;
+    bool m_requestErrorOccurred = false;
+    qsizetype m_lastAudioByteCount = 0;
 };
 
 

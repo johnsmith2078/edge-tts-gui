@@ -8,20 +8,21 @@ TextToSpeech::TextToSpeech(QObject *parent)
     buffer = new QBuffer(this);
     audioOutput = new QAudioOutput(this);
 
-    QObject::connect(player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
-        if (state != QMediaPlayer::PlayingState || m_hasPlaybackStarted) {
-            return;
-        }
-        m_hasPlaybackStarted = true;
-        emit playbackStarted();
-    });
-
     QObject::connect(player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
         if (position <= 0 || m_hasPlaybackStarted) {
             return;
         }
         m_hasPlaybackStarted = true;
         emit playbackStarted();
+    });
+
+    QObject::connect(player, &QMediaPlayer::errorOccurred, this, [this](QMediaPlayer::Error error, const QString &errorString) {
+        if (error == QMediaPlayer::NoError || m_playbackErrorOccurred) {
+            return;
+        }
+        m_playbackErrorOccurred = true;
+        qDebug() << "Media player error:" << errorString;
+        emit finished();
     });
 
     QObject::connect(player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
@@ -31,6 +32,14 @@ TextToSpeech::TextToSpeech(QObject *parent)
     });
 
     QObject::connect(this, &TextToSpeech::stop, player, &QMediaPlayer::stop);
+    QObject::connect(this, &TextToSpeech::stop, this, [this]() {
+        if (m_reply) {
+            m_reply->abort();
+            m_reply->deleteLater();
+            m_reply = nullptr;
+        }
+        emit finished();
+    });
 }
 
 TextToSpeech::~TextToSpeech() {
@@ -42,6 +51,14 @@ TextToSpeech::~TextToSpeech() {
 void TextToSpeech::getTTS(const QString &text, const QString &ref_audio_path, const QString &text_lang, const QString &prompt_lang
                           , const QString &prompt_text) {
     m_hasPlaybackStarted = false;
+    m_playbackErrorOccurred = false;
+    m_requestErrorOccurred = false;
+    m_lastAudioByteCount = 0;
+    if (m_reply) {
+        m_reply->abort();
+        m_reply->deleteLater();
+        m_reply = nullptr;
+    }
     QUrl url("http://127.0.0.1:9880/tts");
     QUrlQuery query;
     query.addQueryItem("text", text);
@@ -58,8 +75,8 @@ void TextToSpeech::getTTS(const QString &text, const QString &ref_audio_path, co
     url.setQuery(query);
 
     QNetworkRequest request(url);
-    QNetworkReply *reply = manager->get(request);
-    connect(reply, &QNetworkReply::finished, this, &TextToSpeech::onGetFinished);
+    m_reply = manager->get(request);
+    connect(m_reply, &QNetworkReply::finished, this, &TextToSpeech::onGetFinished);
 }
 
 bool TextToSpeech::isPlaying() const
@@ -72,13 +89,40 @@ bool TextToSpeech::hasPlaybackStarted() const
     return m_hasPlaybackStarted;
 }
 
+bool TextToSpeech::hasPlaybackError() const
+{
+    return m_playbackErrorOccurred;
+}
+
+bool TextToSpeech::hasRequestError() const
+{
+    return m_requestErrorOccurred;
+}
+
+qsizetype TextToSpeech::lastAudioByteCount() const
+{
+    return m_lastAudioByteCount;
+}
+
 void TextToSpeech::onGetFinished() {
     QNetworkReply *reply = qobject_cast<QNetworkReply *>(sender());
     if (reply) {
+        if (reply != m_reply) {
+            reply->deleteLater();
+            return;
+        }
+        m_reply = nullptr;
         if (reply->error() == QNetworkReply::NoError) {
             qDebug() << "Get Response!";
 
             QByteArray response = reply->readAll();
+            m_lastAudioByteCount = response.size();
+            if (response.isEmpty()) {
+                m_requestErrorOccurred = true;
+                emit finished();
+                reply->deleteLater();
+                return;
+            }
 
             buffer->close();
 
@@ -93,6 +137,7 @@ void TextToSpeech::onGetFinished() {
             // 播放音频
             player->play();
         } else {
+            m_requestErrorOccurred = true;
             qDebug() << "GET Error:" << reply->errorString();
             emit finished();
         }
