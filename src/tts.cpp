@@ -8,6 +8,22 @@ TextToSpeech::TextToSpeech(QObject *parent)
     buffer = new QBuffer(this);
     audioOutput = new QAudioOutput(this);
 
+    QObject::connect(player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
+        if (state != QMediaPlayer::PlayingState || m_hasPlaybackStarted) {
+            return;
+        }
+        m_hasPlaybackStarted = true;
+        emit playbackStarted();
+    });
+
+    QObject::connect(player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
+        if (position <= 0 || m_hasPlaybackStarted) {
+            return;
+        }
+        m_hasPlaybackStarted = true;
+        emit playbackStarted();
+    });
+
     QObject::connect(player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
             emit finished();
@@ -25,6 +41,7 @@ TextToSpeech::~TextToSpeech() {
 
 void TextToSpeech::getTTS(const QString &text, const QString &ref_audio_path, const QString &text_lang, const QString &prompt_lang
                           , const QString &prompt_text) {
+    m_hasPlaybackStarted = false;
     QUrl url("http://127.0.0.1:9880/tts");
     QUrlQuery query;
     query.addQueryItem("text", text);
@@ -43,6 +60,16 @@ void TextToSpeech::getTTS(const QString &text, const QString &ref_audio_path, co
     QNetworkRequest request(url);
     QNetworkReply *reply = manager->get(request);
     connect(reply, &QNetworkReply::finished, this, &TextToSpeech::onGetFinished);
+}
+
+bool TextToSpeech::isPlaying() const
+{
+    return player->playbackState() == QMediaPlayer::PlayingState;
+}
+
+bool TextToSpeech::hasPlaybackStarted() const
+{
+    return m_hasPlaybackStarted;
 }
 
 void TextToSpeech::onGetFinished() {
@@ -67,6 +94,7 @@ void TextToSpeech::onGetFinished() {
             player->play();
         } else {
             qDebug() << "GET Error:" << reply->errorString();
+            emit finished();
         }
         reply->deleteLater();
     }

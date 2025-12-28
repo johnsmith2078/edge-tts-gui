@@ -40,6 +40,8 @@ public:
 
     bool isPlaying();
 
+    bool hasPlaybackStarted() const;
+
 public slots:
     void start();
 
@@ -65,6 +67,8 @@ signals:
 
     void duplicated();
 
+    void playbackStarted();
+
 private:
     QString m_text;
     QString m_voice;
@@ -82,6 +86,7 @@ private:
     QAudioOutput* m_audioOutput;
     QBuffer m_audioBuffer;
     bool m_playStarted = false;
+    bool m_hasPlaybackStarted = false;
     qsizetype m_audioOffset;
 
     static const qsizetype ms_maxMessageSize = 8192 * 16;

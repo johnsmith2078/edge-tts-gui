@@ -14,6 +14,8 @@ Dialog::Dialog(QWidget *parent)
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
     connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
     connect(&m_tts, &TextToSpeech::finished, this, &Dialog::onPlayFinished);
+    connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(false); });
+    connect(&m_tts, &TextToSpeech::finished, this, [this]() { handleAutoRetryFinished(true); });
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
     connect(this, &Dialog::stop, &m_tts, &TextToSpeech::stop);
 
@@ -48,19 +50,46 @@ void Dialog::onPlayFinished()
 
 void Dialog::playText(const QString& text)
 {
-    ui->plainTextEditContent->setPlainText(text);
-    emit ui->pushButtonPlay->clicked(true);
+    constexpr int kMaxAutoRetries = 2;
+    m_autoRetryText = text;
+    m_autoRetriesRemaining = kMaxAutoRetries;
+    m_autoRetryEnabled = (!manuallyStopped && text.size() > 20);
+    startAutoRetryAttempt();
+}
 
-    QTimer::singleShot(3000, [this, text](){
-        if (manuallyStopped || text.size() <= 20) {
-            return;
-        }
-        if (!m_comm.isPlaying() && !ui->pushButtonStop->isEnabled()) {
-            playText(text);
-        } else {
-            setManuallyStopped(true);
-        }
-    });
+void Dialog::startAutoRetryAttempt()
+{
+    ui->plainTextEditContent->setPlainText(m_autoRetryText);
+    m_autoAttemptUseGPTSoVITS = isUseGPTSoVITS();
+    emit ui->pushButtonPlay->clicked(true);
+}
+
+void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
+{
+    if (!m_autoRetryEnabled || manuallyStopped) {
+        m_autoRetryEnabled = false;
+        return;
+    }
+
+    if (fromGPTSoVITS != m_autoAttemptUseGPTSoVITS) {
+        return;
+    }
+
+    const bool playbackStarted = fromGPTSoVITS ? m_tts.hasPlaybackStarted() : m_comm.hasPlaybackStarted();
+    if (playbackStarted) {
+        m_autoRetryEnabled = false;
+        setManuallyStopped(true);
+        return;
+    }
+
+    if (m_autoRetriesRemaining <= 0) {
+        m_autoRetryEnabled = false;
+        setManuallyStopped(true);
+        return;
+    }
+
+    --m_autoRetriesRemaining;
+    QTimer::singleShot(200, this, [this]() { startAutoRetryAttempt(); });
 }
 
 bool Dialog::eventFilter(QObject *obj, QEvent *event)

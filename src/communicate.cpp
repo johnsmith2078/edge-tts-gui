@@ -53,6 +53,22 @@ Communicate::Communicate(QObject *parent)
     m_audioOutput->setVolume(50);
     m_player->setAudioOutput(m_audioOutput);
 
+    QObject::connect(m_player, &QMediaPlayer::playbackStateChanged, this, [this](QMediaPlayer::PlaybackState state) {
+        if (state != QMediaPlayer::PlayingState || m_hasPlaybackStarted) {
+            return;
+        }
+        m_hasPlaybackStarted = true;
+        emit playbackStarted();
+    });
+
+    QObject::connect(m_player, &QMediaPlayer::positionChanged, this, [this](qint64 position) {
+        if (position <= 0 || m_hasPlaybackStarted) {
+            return;
+        }
+        m_hasPlaybackStarted = true;
+        emit playbackStarted();
+    });
+
     QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
         if (status == QMediaPlayer::EndOfMedia) {
             emit finished();
@@ -99,9 +115,15 @@ bool Communicate::isPlaying()
     return m_player->playbackState() == QMediaPlayer::PlayingState;
 }
 
+bool Communicate::hasPlaybackStarted() const
+{
+    return m_hasPlaybackStarted;
+}
+
 
 void Communicate::start() {
     m_playStarted = false;
+    m_hasPlaybackStarted = false;
     m_audioOffset = 0;
     m_audioDataReceived.clear();
 

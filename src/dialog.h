@@ -75,6 +75,10 @@ private:
     QString lastDir = "";
 
     bool manuallyStopped = true;
+    QString m_autoRetryText;
+    int m_autoRetriesRemaining = 0;
+    bool m_autoRetryEnabled = false;
+    bool m_autoAttemptUseGPTSoVITS = false;
 
 public:
     void setManuallyStopped(bool manuallyStopped);
@@ -97,6 +101,11 @@ protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
 
     void dropEvent(QDropEvent *e) override;
+
+private:
+    void startAutoRetryAttempt();
+
+    void handleAutoRetryFinished(bool fromGPTSoVITS);
 }; // class Dialog
 
 #endif // DIALOG_H

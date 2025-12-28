@@ -24,6 +24,10 @@ public:
     void getTTS(const QString &text, const QString &ref_audio_path, const QString &text_lang="zh", const QString &prompt_lang="zh"
                 , const QString &prompt_text="");
 
+    bool isPlaying() const;
+
+    bool hasPlaybackStarted() const;
+
 private slots:
     void onGetFinished();
 
@@ -32,12 +36,15 @@ signals:
 
     void stop();
 
+    void playbackStarted();
+
 
 private:
     QNetworkAccessManager *manager;
     QMediaPlayer* player;
     QBuffer *buffer;
     QAudioOutput *audioOutput;
+    bool m_hasPlaybackStarted = false;
 };
 
 
