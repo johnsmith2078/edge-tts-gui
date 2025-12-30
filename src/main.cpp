@@ -102,18 +102,35 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         // 检测到 F9 键
         if (key == VK_F9) {
             Dialog::getInstance().setManuallyStopped(false);
-            // 检测剪切板内容是否为图片
-            const QMimeData *mimeData = QApplication::clipboard()->mimeData();
-            if (mimeData->hasImage()) {
-                QImage image = qvariant_cast<QImage>(mimeData->imageData());
-                QString ocrResult = performOCR(image);
+            QClipboard *clipboard = QApplication::clipboard();
+
+            // 如果剪切板里有图片，先保存一份，后续 Ctrl+C 没复制出文字时再做 OCR 兜底
+            const QMimeData *mimeData = clipboard->mimeData();
+            const bool hasImage = mimeData->hasImage();
+            const QImage clipboardImage = hasImage ? qvariant_cast<QImage>(mimeData->imageData()) : QImage();
+
+            // 先尝试 Ctrl+C 复制选中的文字；如果复制后剪贴板里有文字，则直接朗读
+            const QString prevText = clipboard->text();
+            const DWORD prevClipboardSeq = GetClipboardSequenceNumber();
+            simulateCtrlC();
+            for (int i = 0; i < 20; ++i) {
+                sleepms(25);
+                if (GetClipboardSequenceNumber() != prevClipboardSeq) {
+                    break;
+                }
+            }
+
+            const QString copiedText = clipboard->text();
+            const QString trimmedText = copiedText.trimmed();
+            const bool clipboardChanged = GetClipboardSequenceNumber() != prevClipboardSeq;
+            const bool hasCopiedText = !trimmedText.isEmpty() && (clipboardChanged || copiedText != prevText);
+            if (hasCopiedText) {
+                Dialog::getInstance().playText(copiedText);
+            } else if (hasImage) {
+                QString ocrResult = performOCR(clipboardImage);
                 Dialog::getInstance().playText(ocrResult);
                 deleteResultFiles();
             } else {
-                // 模拟 Ctrl+C 组合键按下
-                simulateCtrlC();
-                sleepms(100);
-                QString copiedText = QApplication::clipboard()->text(); // 获取剪贴板文本
                 Dialog::getInstance().playText(copiedText);
             }
         }
