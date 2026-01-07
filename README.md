@@ -13,6 +13,8 @@
 便捷操作：
 - 选中文本后，在选中文本末尾会出现悬浮播放按钮，点击即可朗读（同 `F9` 效果）；朗读中按钮会变为停止，点击可停止
 
+![button](button.jpg)
+
 ![interface](cover.jpg)
 
 reference: 
