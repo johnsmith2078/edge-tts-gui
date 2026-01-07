@@ -10,13 +10,17 @@ CONFIG += c++17
 
 SOURCES += \
     communicate.cpp \
+    floatingplaybutton.cpp \
     main.cpp \
     dialog.cpp \
+    selectionoverlaycontroller.cpp \
     tts.cpp
 
 HEADERS += \
     communicate.h \
+    floatingplaybutton.h \
     dialog.h\
+    selectionoverlaycontroller.h \
     tts.h
 
 FORMS += \
@@ -26,7 +30,7 @@ RC_ICONS = favicon.ico
 
 VERSION = 0.9.1
 
-win32: LIBS += -luser32
+win32: LIBS += -luser32 -lole32 -loleaut32
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

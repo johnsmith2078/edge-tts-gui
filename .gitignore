@@ -2,3 +2,5 @@ src/edge-tts-gui.pro.user
 src/build
 build
 src/.qtcreator
+dist/
+*.evb

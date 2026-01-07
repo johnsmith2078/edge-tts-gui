@@ -46,6 +46,7 @@ void Dialog::onPlayFinished()
     ui->pushButtonPlay->setDisabled(false);
     ui->pushButtonPlay->setText("▶️ 播放");
     ui->pushButtonStop->setEnabled(false);
+    setPlaybackActive(false);
 }
 
 void Dialog::playText(const QString& text)
@@ -56,6 +57,19 @@ void Dialog::playText(const QString& text)
     m_autoRetryEnabled = !manuallyStopped;
     m_lastFinishedAttemptSerial = -1;
     startAutoRetryAttempt();
+}
+
+void Dialog::stopPlayback()
+{
+    if (!m_playbackActive) {
+        return;
+    }
+    on_pushButtonStop_clicked();
+}
+
+bool Dialog::isPlaybackActive() const
+{
+    return m_playbackActive;
 }
 
 void Dialog::startAutoRetryAttempt()
@@ -228,18 +242,20 @@ void Dialog::on_pushButtonPlay_clicked()
         return;
     }
 
-    ui->pushButtonPlay->setDisabled(true);
-    ui->pushButtonPlay->setText("⏳合成中...");
-    ui->pushButtonStop->setEnabled(true);
-
-    if (!isUseGPTSoVITS()) {
-        setCommunicate(text, voice, "");
-        emit send();
+    const bool useGPT = isUseGPTSoVITS();
+    const QString refAudioFilename = ui->lineEditRefAudio->text();
+    if (useGPT && !isValidAudioFile(refAudioFilename)) {
         return;
     }
 
-    QString refAudioFilename = ui->lineEditRefAudio->text();
-    if (!isValidAudioFile(refAudioFilename)) {
+    ui->pushButtonPlay->setDisabled(true);
+    ui->pushButtonPlay->setText("⏳合成中...");
+    ui->pushButtonStop->setEnabled(true);
+    setPlaybackActive(true);
+
+    if (!useGPT) {
+        setCommunicate(text, voice, "");
+        emit send();
         return;
     }
 
@@ -249,6 +265,7 @@ void Dialog::on_pushButtonPlay_clicked()
 void Dialog::on_pushButtonStop_clicked()
 {
     setManuallyStopped(true);
+    setPlaybackActive(false);
     emit stop();
 }
 
@@ -289,6 +306,15 @@ void Dialog::on_pushButtonSave_clicked()
 void Dialog::setManuallyStopped(bool manuallyStopped)
 {
     this->manuallyStopped = manuallyStopped;
+}
+
+void Dialog::setPlaybackActive(bool active)
+{
+    if (m_playbackActive == active) {
+        return;
+    }
+    m_playbackActive = active;
+    emit playbackActiveChanged(active);
 }
 
 void Dialog::on_radioButtonXiaoxiao_clicked(bool checked)

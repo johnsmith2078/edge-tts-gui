@@ -34,6 +34,8 @@ signals:
 
     void stop();
 
+    void playbackActiveChanged(bool active);
+
 private:
     void checkDuplicate(const QString& text, const QString& voice);
 
@@ -43,6 +45,10 @@ private:
 
 public:
     void playText(const QString& text);
+
+    void stopPlayback();
+
+    bool isPlaybackActive() const;
 
 private slots:
     void on_pushButtonPlay_clicked();
@@ -81,12 +87,15 @@ private:
     bool m_autoAttemptUseGPTSoVITS = false;
     int m_autoAttemptSerial = 0;
     int m_lastFinishedAttemptSerial = -1;
+    bool m_playbackActive = false;
 
 public:
     void setManuallyStopped(bool manuallyStopped);
 
 private:
     void loadVoiceData();
+
+    void setPlaybackActive(bool active);
 
     QMap<QString, QMap<QString, QString>> data; // 存储语言、语音名称和代码
 

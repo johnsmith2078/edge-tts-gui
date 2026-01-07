@@ -1,9 +1,12 @@
 #include "dialog.h"
+#include "selectionoverlaycontroller.h"
 
 #include <QApplication>
 #include <QClipboard>
+#include <QCursor>
 #include <QMimeData>
 #include <QImage>
+#include <QMetaObject>
 #include <QTemporaryFile>
 #include <QProcess>
 #include <QDir>
@@ -16,6 +19,8 @@ void sleepms(uint64_t ms) {
 }
 
 static HHOOK g_hook;
+static HHOOK g_mouseHook;
+static SelectionOverlayController *g_selectionOverlayController = nullptr;
 
 // 模拟 Ctrl+C 组合键按下
 void simulateCtrlC() {
@@ -138,14 +143,51 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(g_hook, nCode, wParam, lParam);
 }
 
+// 全局鼠标钩子的回调函数
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    (void)lParam;
+    if (nCode >= 0 && g_selectionOverlayController) {
+        const QPoint pos = QCursor::pos();
+        SelectionOverlayController *controller = g_selectionOverlayController;
+        switch (wParam) {
+        case WM_LBUTTONDOWN:
+        case WM_RBUTTONDOWN:
+        case WM_MBUTTONDOWN:
+        case WM_MOUSEWHEEL:
+        case WM_MOUSEHWHEEL:
+            QMetaObject::invokeMethod(controller, [controller, pos]() { controller->handleGlobalMouseDown(pos); }, Qt::QueuedConnection);
+            break;
+        case WM_LBUTTONUP:
+            QMetaObject::invokeMethod(controller, [controller, pos]() { controller->handleGlobalMouseUp(pos); }, Qt::QueuedConnection);
+            break;
+        default:
+            break;
+        }
+    }
+    return CallNextHookEx(g_mouseHook, nCode, wParam, lParam);
+}
+
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
     Dialog::getInstance().show();
 
-    SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
+    SelectionOverlayController selectionOverlay;
+    g_selectionOverlayController = &selectionOverlay;
+
+    g_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
+    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, NULL, 0);
     int ret = a.exec();
-    UnhookWindowsHookEx(g_hook);
+
+    g_selectionOverlayController = nullptr;
+    if (g_hook) {
+        UnhookWindowsHookEx(g_hook);
+        g_hook = nullptr;
+    }
+    if (g_mouseHook) {
+        UnhookWindowsHookEx(g_mouseHook);
+        g_mouseHook = nullptr;
+    }
 
     return ret;
 }
