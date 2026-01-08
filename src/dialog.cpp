@@ -52,6 +52,10 @@ Dialog::Dialog(QWidget *parent)
         }
         ui->checkBoxUseGPTSoVITS->setChecked(false);
     });
+
+    if (!DashScopeTTS::resolvedApiKey().isEmpty()) {
+        ui->checkBoxUseQwenTTS->setChecked(true);
+    }
 }
 
 Dialog::~Dialog()
