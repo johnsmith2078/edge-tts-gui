@@ -10,6 +10,7 @@ CONFIG += c++17
 
 SOURCES += \
     communicate.cpp \
+    dashscope_tts.cpp \
     floatingplaybutton.cpp \
     main.cpp \
     dialog.cpp \
@@ -18,6 +19,7 @@ SOURCES += \
 
 HEADERS += \
     communicate.h \
+    dashscope_tts.h \
     floatingplaybutton.h \
     dialog.h\
     selectionoverlaycontroller.h \

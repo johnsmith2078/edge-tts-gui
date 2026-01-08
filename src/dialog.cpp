@@ -2,6 +2,8 @@
 #include "ui_dialog.h"
 #include <QFileDialog>
 #include <QMimeData>
+#include <QMessageBox>
+#include <QProcessEnvironment>
 #include <QTimer>
 
 Dialog::Dialog(QWidget *parent)
@@ -14,10 +16,13 @@ Dialog::Dialog(QWidget *parent)
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
     connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
     connect(&m_tts, &TextToSpeech::finished, this, &Dialog::onPlayFinished);
-    connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(false); });
-    connect(&m_tts, &TextToSpeech::finished, this, [this]() { handleAutoRetryFinished(true); });
+    connect(&m_qwen, &DashScopeTTS::finished, this, &Dialog::onPlayFinished);
+    connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::Edge); });
+    connect(&m_tts, &TextToSpeech::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::GPTSoVITS); });
+    connect(&m_qwen, &DashScopeTTS::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::Qwen); });
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
     connect(this, &Dialog::stop, &m_tts, &TextToSpeech::stop);
+    connect(this, &Dialog::stop, &m_qwen, &DashScopeTTS::stop);
 
     connect(&m_comm, &Communicate::saveFinished, [&]() {
         ui->pushButtonSave->setDisabled(false);
@@ -34,6 +39,19 @@ Dialog::Dialog(QWidget *parent)
     loadVoiceData();
 
     voice = "zh-CN, XiaoyiNeural";
+
+    connect(ui->checkBoxUseGPTSoVITS, &QCheckBox::toggled, this, [this](bool checked) {
+        if (!checked) {
+            return;
+        }
+        ui->checkBoxUseQwenTTS->setChecked(false);
+    });
+    connect(ui->checkBoxUseQwenTTS, &QCheckBox::toggled, this, [this](bool checked) {
+        if (!checked) {
+            return;
+        }
+        ui->checkBoxUseGPTSoVITS->setChecked(false);
+    });
 }
 
 Dialog::~Dialog()
@@ -76,19 +94,19 @@ void Dialog::startAutoRetryAttempt()
 {
     const int attemptSerial = ++m_autoAttemptSerial;
     ui->plainTextEditContent->setPlainText(m_autoRetryText);
-    m_autoAttemptUseGPTSoVITS = isUseGPTSoVITS();
+    m_autoAttemptEngine = selectedEngine();
     emit ui->pushButtonPlay->clicked(true);
-    scheduleNoPlaybackWatchdog(attemptSerial, -1);
+    scheduleNoPlaybackWatchdog(attemptSerial, m_autoAttemptEngine, -1);
 }
 
-void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
+void Dialog::handleAutoRetryFinished(TTSEngine engine)
 {
     if (!m_autoRetryEnabled || manuallyStopped) {
         m_autoRetryEnabled = false;
         return;
     }
 
-    if (fromGPTSoVITS != m_autoAttemptUseGPTSoVITS) {
+    if (engine != m_autoAttemptEngine) {
         return;
     }
 
@@ -97,10 +115,22 @@ void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
     }
     m_lastFinishedAttemptSerial = m_autoAttemptSerial;
 
-    const bool playbackStarted = fromGPTSoVITS ? m_tts.hasPlaybackStarted() : m_comm.hasPlaybackStarted();
-    const bool hasError = fromGPTSoVITS
-        ? (m_tts.hasPlaybackError() || m_tts.hasRequestError() || m_tts.lastAudioByteCount() <= 0)
-        : (m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0);
+    bool playbackStarted = false;
+    bool hasError = false;
+    switch (engine) {
+    case TTSEngine::Edge:
+        playbackStarted = m_comm.hasPlaybackStarted();
+        hasError = m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0;
+        break;
+    case TTSEngine::GPTSoVITS:
+        playbackStarted = m_tts.hasPlaybackStarted();
+        hasError = m_tts.hasPlaybackError() || m_tts.hasRequestError() || m_tts.lastAudioByteCount() <= 0;
+        break;
+    case TTSEngine::Qwen:
+        playbackStarted = m_qwen.hasPlaybackStarted();
+        hasError = m_qwen.hasPlaybackError() || m_qwen.hasRequestError() || m_qwen.lastAudioByteCount() <= 0;
+        break;
+    }
     const bool success = playbackStarted && !hasError;
     if (success) {
         m_autoRetryEnabled = false;
@@ -118,24 +148,52 @@ void Dialog::handleAutoRetryFinished(bool fromGPTSoVITS)
     QTimer::singleShot(200, this, [this]() { startAutoRetryAttempt(); });
 }
 
-void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived)
+void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, TTSEngine engine, qsizetype lastEdgeBytesReceived)
 {
     constexpr int kEdgeStartupSize = 8192 * 4;
     constexpr int kNoPlaybackTimeoutMsEdge = 8000;
     constexpr int kNoPlaybackTimeoutMsGPT = 20000;
+    constexpr int kNoPlaybackTimeoutMsQwen = 25000;
 
-    const int timeoutMs = m_autoAttemptUseGPTSoVITS ? kNoPlaybackTimeoutMsGPT : kNoPlaybackTimeoutMsEdge;
-    QTimer::singleShot(timeoutMs, this, [this, attemptSerial, lastEdgeBytesReceived]() {
+    int timeoutMs = 0;
+    switch (engine) {
+    case TTSEngine::Edge:
+        timeoutMs = kNoPlaybackTimeoutMsEdge;
+        break;
+    case TTSEngine::GPTSoVITS:
+        timeoutMs = kNoPlaybackTimeoutMsGPT;
+        break;
+    case TTSEngine::Qwen:
+        timeoutMs = kNoPlaybackTimeoutMsQwen;
+        break;
+    }
+
+    QTimer::singleShot(timeoutMs, this, [this, attemptSerial, engine, lastEdgeBytesReceived]() {
         if (!m_autoRetryEnabled || manuallyStopped || attemptSerial != m_autoAttemptSerial) {
             return;
         }
 
-        const bool playbackStarted = m_autoAttemptUseGPTSoVITS ? m_tts.hasPlaybackStarted() : m_comm.hasPlaybackStarted();
+        if (engine != m_autoAttemptEngine) {
+            return;
+        }
+
+        bool playbackStarted = false;
+        switch (engine) {
+        case TTSEngine::Edge:
+            playbackStarted = m_comm.hasPlaybackStarted();
+            break;
+        case TTSEngine::GPTSoVITS:
+            playbackStarted = m_tts.hasPlaybackStarted();
+            break;
+        case TTSEngine::Qwen:
+            playbackStarted = m_qwen.hasPlaybackStarted();
+            break;
+        }
         if (playbackStarted) {
             return;
         }
 
-        if (m_autoAttemptUseGPTSoVITS) {
+        if (engine != TTSEngine::Edge) {
             emit stop();
             return;
         }
@@ -147,7 +205,7 @@ void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeByt
             return;
         }
 
-        scheduleNoPlaybackWatchdog(attemptSerial, bytesReceived);
+        scheduleNoPlaybackWatchdog(attemptSerial, engine, bytesReceived);
     });
 }
 
@@ -221,6 +279,22 @@ bool Dialog::isUseGPTSoVITS()
     return ui->checkBoxUseGPTSoVITS->isChecked();
 }
 
+bool Dialog::isUseQwenTTS()
+{
+    return ui->checkBoxUseQwenTTS->isChecked();
+}
+
+Dialog::TTSEngine Dialog::selectedEngine()
+{
+    if (isUseQwenTTS()) {
+        return TTSEngine::Qwen;
+    }
+    if (isUseGPTSoVITS()) {
+        return TTSEngine::GPTSoVITS;
+    }
+    return TTSEngine::Edge;
+}
+
 bool isValidAudioFile(const QString &filePath) {
     // 检查文件扩展名
     QStringList validExtensions = {"mp3", "wav", "ogg", "flac", "aac"};
@@ -242,10 +316,26 @@ void Dialog::on_pushButtonPlay_clicked()
         return;
     }
 
-    const bool useGPT = isUseGPTSoVITS();
+    const TTSEngine engine = selectedEngine();
     const QString refAudioFilename = ui->lineEditRefAudio->text();
-    if (useGPT && !isValidAudioFile(refAudioFilename)) {
+    if (engine == TTSEngine::GPTSoVITS && !isValidAudioFile(refAudioFilename)) {
+        QMessageBox::warning(this, "GPT-SoVITS", "请选择有效的参考音频文件");
+        m_autoRetryEnabled = false;
+        setManuallyStopped(true);
         return;
+    }
+
+    if (engine == TTSEngine::Qwen) {
+        const QString key = DashScopeTTS::resolvedApiKey();
+        if (key.isEmpty()) {
+            QMessageBox::warning(this, "Qwen3-TTS-Flash", "请先设置环境变量 DASHSCOPE_API_KEY（如已设置，请重启程序/资源管理器或重新登录）");
+            m_autoRetryEnabled = false;
+            setManuallyStopped(true);
+            return;
+        }
+        if (ui->lineEditQwenVoice->text().trimmed().isEmpty()) {
+            ui->lineEditQwenVoice->setText("Cherry");
+        }
     }
 
     ui->pushButtonPlay->setDisabled(true);
@@ -253,13 +343,18 @@ void Dialog::on_pushButtonPlay_clicked()
     ui->pushButtonStop->setEnabled(true);
     setPlaybackActive(true);
 
-    if (!useGPT) {
+    if (engine == TTSEngine::Edge) {
         setCommunicate(text, voice, "");
         emit send();
         return;
     }
 
-    m_tts.getTTS(text, refAudioFilename);
+    if (engine == TTSEngine::GPTSoVITS) {
+        m_tts.getTTS(text, refAudioFilename);
+        return;
+    }
+
+    m_qwen.getTTS(text, ui->lineEditQwenVoice->text().trimmed());
 }
 
 void Dialog::on_pushButtonStop_clicked()
@@ -436,4 +531,3 @@ void Dialog::on_pushButtonSelectRefAudio_clicked()
         ui->lineEditRefAudio->setText(filePath);
     }
 }
-

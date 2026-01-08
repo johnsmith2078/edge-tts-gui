@@ -242,6 +242,47 @@
     </widget>
    </widget>
   </widget>
+  <widget class="QGroupBox" name="groupBoxQwenTTS">
+   <property name="geometry">
+    <rect>
+     <x>470</x>
+     <y>430</y>
+     <width>251</width>
+     <height>61</height>
+    </rect>
+   </property>
+   <property name="title">
+    <string>Qwen3-TTS-Flash</string>
+   </property>
+   <widget class="QSplitter" name="splitterQwenTTS">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>30</y>
+      <width>231</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="orientation">
+     <enum>Qt::Horizontal</enum>
+    </property>
+    <widget class="QCheckBox" name="checkBoxUseQwenTTS">
+     <property name="text">
+      <string>启用</string>
+     </property>
+    </widget>
+    <widget class="QLabel" name="labelQwenVoice">
+     <property name="text">
+      <string>音色:</string>
+     </property>
+    </widget>
+    <widget class="QLineEdit" name="lineEditQwenVoice">
+     <property name="text">
+      <string>Cherry</string>
+     </property>
+    </widget>
+   </widget>
+  </widget>
  </widget>
  <resources/>
  <connections>

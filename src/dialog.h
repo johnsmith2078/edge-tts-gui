@@ -6,6 +6,7 @@
 #include <QMap>
 #include "communicate.h"
 #include "tts.h"
+#include "dashscope_tts.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -43,6 +44,16 @@ private:
 
     bool isUseGPTSoVITS();
 
+    bool isUseQwenTTS();
+
+    enum class TTSEngine {
+        Edge,
+        GPTSoVITS,
+        Qwen,
+    };
+
+    TTSEngine selectedEngine();
+
 public:
     void playText(const QString& text);
 
@@ -75,6 +86,7 @@ private:
     Ui::Dialog *ui;
     Communicate m_comm;
     TextToSpeech m_tts;
+    DashScopeTTS m_qwen;
     QString m_lastText;
     QString m_lastVoice;
     QString voice;
@@ -84,7 +96,7 @@ private:
     QString m_autoRetryText;
     int m_autoRetriesRemaining = 0;
     bool m_autoRetryEnabled = false;
-    bool m_autoAttemptUseGPTSoVITS = false;
+    TTSEngine m_autoAttemptEngine = TTSEngine::Edge;
     int m_autoAttemptSerial = 0;
     int m_lastFinishedAttemptSerial = -1;
     bool m_playbackActive = false;
@@ -116,9 +128,9 @@ protected:
 private:
     void startAutoRetryAttempt();
 
-    void handleAutoRetryFinished(bool fromGPTSoVITS);
+    void handleAutoRetryFinished(TTSEngine engine);
 
-    void scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived);
+    void scheduleNoPlaybackWatchdog(int attemptSerial, TTSEngine engine, qsizetype lastEdgeBytesReceived);
 }; // class Dialog
 
 #endif // DIALOG_H

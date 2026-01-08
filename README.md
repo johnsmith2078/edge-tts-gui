@@ -3,6 +3,12 @@
 
 新版本支持GPT-SoVITS api_v2
 
+新版本支持 Qwen3-TTS-Flash（DashScope）：
+- 先配置环境变量 `DASHSCOPE_API_KEY`
+- 可选：`DASHSCOPE_BASE_HTTP_API_URL`（默认北京 `https://dashscope.aliyuncs.com/api/v1`，新加坡可用 `https://dashscope-intl.aliyuncs.com/api/v1`）
+- 可选：`DASHSCOPE_TTS_ENDPOINT`（默认 `/services/aigc/multimodal-conversation/generation`）
+- 可选：`DASHSCOPE_TTS_MODEL`（默认 `qwen3-tts-flash`）
+
 快捷键：
 - `Ctrl` + `Enter`：播放
 - `Ctrl` + `S`：保存
