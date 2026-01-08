@@ -12,6 +12,63 @@ Dialog::Dialog(QWidget *parent)
     , m_comm()
 {
     ui->setupUi(this);
+
+    ui->comboBoxQwenVoice->addItems(QStringList{
+        "Cherry",
+        "Serena",
+        "Ethan",
+        "Chelsie",
+        "Momo",
+        "Vivian",
+        "Moon",
+        "Maia",
+        "Kai",
+        "Nofish",
+        "Bella",
+        "Jennifer",
+        "Ryan",
+        "Katerina",
+        "Aiden",
+        "Eldric Sage",
+        "Mia",
+        "Mochi",
+        "Bellona",
+        "Vincent",
+        "Bunny",
+        "Neil",
+        "Elias",
+        "Arthur",
+        "Nini",
+        "Ebona",
+        "Seren",
+        "Pip",
+        "Stella",
+        "Bodega",
+        "Sonrisa",
+        "Alek",
+        "Dolce",
+        "Sohee",
+        "Ono Anna",
+        "Lenn",
+        "Emilien",
+        "Andre",
+        "Radio Gol",
+        "Jada",
+        "Dylan",
+        "Li",
+        "Marcus",
+        "Roy",
+        "Peter",
+        "Sunny",
+        "Eric",
+        "Rocky",
+        "Kiki",
+    });
+    const int qwenDefaultVoiceIndex = ui->comboBoxQwenVoice->findText("Cherry");
+    if (qwenDefaultVoiceIndex >= 0) {
+        ui->comboBoxQwenVoice->setCurrentIndex(qwenDefaultVoiceIndex);
+    }
+
     // connect this->send() to this->m_comm.start()
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
     connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
@@ -337,8 +394,11 @@ void Dialog::on_pushButtonPlay_clicked()
             setManuallyStopped(true);
             return;
         }
-        if (ui->lineEditQwenVoice->text().trimmed().isEmpty()) {
-            ui->lineEditQwenVoice->setText("Cherry");
+        if (ui->comboBoxQwenVoice->currentText().trimmed().isEmpty()) {
+            const int defaultVoiceIndex = ui->comboBoxQwenVoice->findText("Cherry");
+            if (defaultVoiceIndex >= 0) {
+                ui->comboBoxQwenVoice->setCurrentIndex(defaultVoiceIndex);
+            }
         }
     }
 
@@ -358,7 +418,7 @@ void Dialog::on_pushButtonPlay_clicked()
         return;
     }
 
-    m_qwen.getTTS(text, ui->lineEditQwenVoice->text().trimmed());
+    m_qwen.getTTS(text, ui->comboBoxQwenVoice->currentText().trimmed());
 }
 
 void Dialog::on_pushButtonStop_clicked()

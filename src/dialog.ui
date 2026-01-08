@@ -276,11 +276,7 @@
       <string>音色:</string>
      </property>
     </widget>
-    <widget class="QLineEdit" name="lineEditQwenVoice">
-     <property name="text">
-      <string>Cherry</string>
-     </property>
-    </widget>
+    <widget class="QComboBox" name="comboBoxQwenVoice"/>
    </widget>
   </widget>
  </widget>
