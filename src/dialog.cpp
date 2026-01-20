@@ -2,8 +2,6 @@
 #include "ui_dialog.h"
 #include <QFileDialog>
 #include <QMimeData>
-#include <QMessageBox>
-#include <QProcessEnvironment>
 #include <QTimer>
 
 Dialog::Dialog(QWidget *parent)
@@ -13,73 +11,11 @@ Dialog::Dialog(QWidget *parent)
 {
     ui->setupUi(this);
 
-    ui->comboBoxQwenVoice->addItems(QStringList{
-        "Cherry",
-        "Serena",
-        "Ethan",
-        "Chelsie",
-        "Momo",
-        "Vivian",
-        "Moon",
-        "Maia",
-        "Kai",
-        "Nofish",
-        "Bella",
-        "Jennifer",
-        "Ryan",
-        "Katerina",
-        "Aiden",
-        "Eldric Sage",
-        "Mia",
-        "Mochi",
-        "Bellona",
-        "Vincent",
-        "Bunny",
-        "Neil",
-        "Elias",
-        "Arthur",
-        "Nini",
-        "Ebona",
-        "Seren",
-        "Pip",
-        "Stella",
-        "Bodega",
-        "Sonrisa",
-        "Alek",
-        "Dolce",
-        "Sohee",
-        "Ono Anna",
-        "Lenn",
-        "Emilien",
-        "Andre",
-        "Radio Gol",
-        "Jada",
-        "Dylan",
-        "Li",
-        "Marcus",
-        "Roy",
-        "Peter",
-        "Sunny",
-        "Eric",
-        "Rocky",
-        "Kiki",
-    });
-    const int qwenDefaultVoiceIndex = ui->comboBoxQwenVoice->findText("Cherry");
-    if (qwenDefaultVoiceIndex >= 0) {
-        ui->comboBoxQwenVoice->setCurrentIndex(qwenDefaultVoiceIndex);
-    }
-
     // connect this->send() to this->m_comm.start()
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
     connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
-    connect(&m_tts, &TextToSpeech::finished, this, &Dialog::onPlayFinished);
-    connect(&m_qwen, &DashScopeTTS::finished, this, &Dialog::onPlayFinished);
-    connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::Edge); });
-    connect(&m_tts, &TextToSpeech::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::GPTSoVITS); });
-    connect(&m_qwen, &DashScopeTTS::finished, this, [this]() { handleAutoRetryFinished(TTSEngine::Qwen); });
+    connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(); });
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
-    connect(this, &Dialog::stop, &m_tts, &TextToSpeech::stop);
-    connect(this, &Dialog::stop, &m_qwen, &DashScopeTTS::stop);
 
     connect(&m_comm, &Communicate::saveFinished, [&]() {
         ui->pushButtonSave->setDisabled(false);
@@ -96,23 +32,6 @@ Dialog::Dialog(QWidget *parent)
     loadVoiceData();
 
     voice = "zh-CN, XiaoyiNeural";
-
-    connect(ui->checkBoxUseGPTSoVITS, &QCheckBox::toggled, this, [this](bool checked) {
-        if (!checked) {
-            return;
-        }
-        ui->checkBoxUseQwenTTS->setChecked(false);
-    });
-    connect(ui->checkBoxUseQwenTTS, &QCheckBox::toggled, this, [this](bool checked) {
-        if (!checked) {
-            return;
-        }
-        ui->checkBoxUseGPTSoVITS->setChecked(false);
-    });
-
-    if (!DashScopeTTS::resolvedApiKey().isEmpty()) {
-        ui->checkBoxUseQwenTTS->setChecked(true);
-    }
 }
 
 Dialog::~Dialog()
@@ -155,19 +74,14 @@ void Dialog::startAutoRetryAttempt()
 {
     const int attemptSerial = ++m_autoAttemptSerial;
     ui->plainTextEditContent->setPlainText(m_autoRetryText);
-    m_autoAttemptEngine = selectedEngine();
     emit ui->pushButtonPlay->clicked(true);
-    scheduleNoPlaybackWatchdog(attemptSerial, m_autoAttemptEngine, -1);
+    scheduleNoPlaybackWatchdog(attemptSerial, -1);
 }
 
-void Dialog::handleAutoRetryFinished(TTSEngine engine)
+void Dialog::handleAutoRetryFinished()
 {
     if (!m_autoRetryEnabled || manuallyStopped) {
         m_autoRetryEnabled = false;
-        return;
-    }
-
-    if (engine != m_autoAttemptEngine) {
         return;
     }
 
@@ -176,22 +90,8 @@ void Dialog::handleAutoRetryFinished(TTSEngine engine)
     }
     m_lastFinishedAttemptSerial = m_autoAttemptSerial;
 
-    bool playbackStarted = false;
-    bool hasError = false;
-    switch (engine) {
-    case TTSEngine::Edge:
-        playbackStarted = m_comm.hasPlaybackStarted();
-        hasError = m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0;
-        break;
-    case TTSEngine::GPTSoVITS:
-        playbackStarted = m_tts.hasPlaybackStarted();
-        hasError = m_tts.hasPlaybackError() || m_tts.hasRequestError() || m_tts.lastAudioByteCount() <= 0;
-        break;
-    case TTSEngine::Qwen:
-        playbackStarted = m_qwen.hasPlaybackStarted();
-        hasError = m_qwen.hasPlaybackError() || m_qwen.hasRequestError() || m_qwen.lastAudioByteCount() <= 0;
-        break;
-    }
+    const bool playbackStarted = m_comm.hasPlaybackStarted();
+    const bool hasError = m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0;
     const bool success = playbackStarted && !hasError;
     if (success) {
         m_autoRetryEnabled = false;
@@ -209,53 +109,18 @@ void Dialog::handleAutoRetryFinished(TTSEngine engine)
     QTimer::singleShot(200, this, [this]() { startAutoRetryAttempt(); });
 }
 
-void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, TTSEngine engine, qsizetype lastEdgeBytesReceived)
+void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived)
 {
     constexpr int kEdgeStartupSize = 8192 * 4;
     constexpr int kNoPlaybackTimeoutMsEdge = 8000;
-    constexpr int kNoPlaybackTimeoutMsGPT = 20000;
-    constexpr int kNoPlaybackTimeoutMsQwen = 25000;
 
-    int timeoutMs = 0;
-    switch (engine) {
-    case TTSEngine::Edge:
-        timeoutMs = kNoPlaybackTimeoutMsEdge;
-        break;
-    case TTSEngine::GPTSoVITS:
-        timeoutMs = kNoPlaybackTimeoutMsGPT;
-        break;
-    case TTSEngine::Qwen:
-        timeoutMs = kNoPlaybackTimeoutMsQwen;
-        break;
-    }
-
-    QTimer::singleShot(timeoutMs, this, [this, attemptSerial, engine, lastEdgeBytesReceived]() {
+    QTimer::singleShot(kNoPlaybackTimeoutMsEdge, this, [this, attemptSerial, lastEdgeBytesReceived]() {
         if (!m_autoRetryEnabled || manuallyStopped || attemptSerial != m_autoAttemptSerial) {
             return;
         }
 
-        if (engine != m_autoAttemptEngine) {
-            return;
-        }
-
-        bool playbackStarted = false;
-        switch (engine) {
-        case TTSEngine::Edge:
-            playbackStarted = m_comm.hasPlaybackStarted();
-            break;
-        case TTSEngine::GPTSoVITS:
-            playbackStarted = m_tts.hasPlaybackStarted();
-            break;
-        case TTSEngine::Qwen:
-            playbackStarted = m_qwen.hasPlaybackStarted();
-            break;
-        }
+        const bool playbackStarted = m_comm.hasPlaybackStarted();
         if (playbackStarted) {
-            return;
-        }
-
-        if (engine != TTSEngine::Edge) {
-            emit stop();
             return;
         }
 
@@ -266,7 +131,7 @@ void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, TTSEngine engine, qsi
             return;
         }
 
-        scheduleNoPlaybackWatchdog(attemptSerial, engine, bytesReceived);
+        scheduleNoPlaybackWatchdog(attemptSerial, bytesReceived);
     });
 }
 
@@ -335,41 +200,6 @@ void Dialog::setCommunicate(const QString& text, const QString& voice, const QSt
     m_lastVoice = voice;
 }
 
-bool Dialog::isUseGPTSoVITS()
-{
-    return ui->checkBoxUseGPTSoVITS->isChecked();
-}
-
-bool Dialog::isUseQwenTTS()
-{
-    return ui->checkBoxUseQwenTTS->isChecked();
-}
-
-Dialog::TTSEngine Dialog::selectedEngine()
-{
-    if (isUseQwenTTS()) {
-        return TTSEngine::Qwen;
-    }
-    if (isUseGPTSoVITS()) {
-        return TTSEngine::GPTSoVITS;
-    }
-    return TTSEngine::Edge;
-}
-
-bool isValidAudioFile(const QString &filePath) {
-    // 检查文件扩展名
-    QStringList validExtensions = {"mp3", "wav", "ogg", "flac", "aac"};
-    QFileInfo fileInfo(filePath);
-    if (!validExtensions.contains(fileInfo.suffix().toLower())) {
-        return false;
-    }
-
-    // 尝试加载文件
-    QMediaPlayer player;
-    player.setSource(QUrl::fromLocalFile(filePath));
-    return player.error() == QMediaPlayer::NoError;
-}
-
 void Dialog::on_pushButtonPlay_clicked()
 {
     QString text = ui->plainTextEditContent->toPlainText();
@@ -377,48 +207,13 @@ void Dialog::on_pushButtonPlay_clicked()
         return;
     }
 
-    const TTSEngine engine = selectedEngine();
-    const QString refAudioFilename = ui->lineEditRefAudio->text();
-    if (engine == TTSEngine::GPTSoVITS && !isValidAudioFile(refAudioFilename)) {
-        QMessageBox::warning(this, "GPT-SoVITS", "请选择有效的参考音频文件");
-        m_autoRetryEnabled = false;
-        setManuallyStopped(true);
-        return;
-    }
-
-    if (engine == TTSEngine::Qwen) {
-        const QString key = DashScopeTTS::resolvedApiKey();
-        if (key.isEmpty()) {
-            QMessageBox::warning(this, "Qwen3-TTS-Flash", "请先设置环境变量 DASHSCOPE_API_KEY（如已设置，请重启程序/资源管理器或重新登录）");
-            m_autoRetryEnabled = false;
-            setManuallyStopped(true);
-            return;
-        }
-        if (ui->comboBoxQwenVoice->currentText().trimmed().isEmpty()) {
-            const int defaultVoiceIndex = ui->comboBoxQwenVoice->findText("Cherry");
-            if (defaultVoiceIndex >= 0) {
-                ui->comboBoxQwenVoice->setCurrentIndex(defaultVoiceIndex);
-            }
-        }
-    }
-
     ui->pushButtonPlay->setDisabled(true);
     ui->pushButtonPlay->setText("⏳合成中...");
     ui->pushButtonStop->setEnabled(true);
     setPlaybackActive(true);
 
-    if (engine == TTSEngine::Edge) {
-        setCommunicate(text, voice, "");
-        emit send();
-        return;
-    }
-
-    if (engine == TTSEngine::GPTSoVITS) {
-        m_tts.getTTS(text, refAudioFilename);
-        return;
-    }
-
-    m_qwen.getTTS(text, ui->comboBoxQwenVoice->currentText().trimmed());
+    setCommunicate(text, voice, "");
+    emit send();
 }
 
 void Dialog::on_pushButtonStop_clicked()
@@ -586,12 +381,4 @@ void Dialog::onVoiceNameChanged(const QString &voiceName)
     QString code = data.value(language).value(voiceName);
 
     voice = code;
-}
-
-void Dialog::on_pushButtonSelectRefAudio_clicked()
-{
-    QString filePath = QFileDialog::getOpenFileName(this, tr("Select Audio File"), "", tr("Audio Files (*.mp3 *.wav *.ogg *.flac *.aac)"));
-    if (!filePath.isEmpty()) {
-        ui->lineEditRefAudio->setText(filePath);
-    }
 }
