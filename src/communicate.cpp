@@ -15,7 +15,8 @@ const QString VOICE_LIST =
     + TRUSTED_CLIENT_TOKEN;
 
 // 定义常量
-const QString CHROMIUM_FULL_VERSION = "130.0.2849.68";
+const QString CHROMIUM_FULL_VERSION = "143.0.3650.75";
+const QString CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split(".", Qt::SkipEmptyParts).value(0);
 
 // 生成 Sec-MS-GEC Token
 QString Communicate::generateSecMsGecToken() {
@@ -97,6 +98,7 @@ Communicate::~Communicate() {
 void Communicate::setText(QString text)
 {
     m_text = escape(remove_incompatible_characters(text));
+    m_textParts = splitTextByByteLength(m_text, ms_maxTextByteLength);
 }
 
 void Communicate::setVoice(QString voice)
@@ -168,16 +170,17 @@ void Communicate::start() {
     request.setRawHeader("Pragma", "no-cache");
     request.setRawHeader("Cache-Control", "no-cache");
     request.setRawHeader("Origin", "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold");
-    request.setRawHeader("Accept-Encoding", "gzip, deflate, br");
+    request.setRawHeader("Accept-Encoding", "gzip, deflate, br, zstd");
     request.setRawHeader("Accept-Language", "en-US,en;q=0.9");
-    request.setRawHeader("User-Agent", ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + CHROMIUM_FULL_VERSION + " Safari/537.36").toUtf8());
+    request.setRawHeader("User-Agent", ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/" + CHROMIUM_MAJOR_VERSION + ".0.0.0 Safari/537.36 Edg/" + CHROMIUM_MAJOR_VERSION + ".0.0.0").toUtf8());
+    request.setRawHeader("Cookie", ("muid=" + generateMuid() + ";").toUtf8());
 
     // 打开 WebSocket 连接
     m_webSocket.open(request);
 }
 
 void Communicate::sendNextTextPart() {
-    if (m_textPartIndex < m_text.length()) {
+    if (m_textPartIndex < m_textParts.size()) {
         m_date = date_to_string();
 
         QString headersAndData =
@@ -185,11 +188,11 @@ void Communicate::sendNextTextPart() {
                                       "Content-Type:application/json; charset=utf-8\r\n"
                                       "Path:speech.config\r\n\r\n"
                                       "{\"context\":{\"synthesis\":{\"audio\":{\"metadataoptions\":{"
-                                      "\"sentenceBoundaryEnabled\":false,\"wordBoundaryEnabled\":true},"
+                                      "\"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"true\"},"
                                       "\"outputFormat\":\"audio-24khz-48kbitrate-mono-mp3\"}}}}\r\n";
         m_webSocket.sendTextMessage(headersAndData);
 
-        QString part = m_text.mid(m_textPartIndex,  ms_maxMessageSize);
+        QString part = m_textParts.at(m_textPartIndex);
         QString ssml = mkssml(part, m_voice, m_rate, m_volume, m_pitch);
         QString ssmlAndData = ssml_headers_plus_data( connect_id(), m_date, ssml );
         m_webSocket.sendTextMessage(ssmlAndData);
@@ -235,8 +238,8 @@ void Communicate::onTextMessageReceived(const QString &message) {
         m_downloadAudio = true;
     } else if (path == "turn.end") {
         m_downloadAudio = false;
-        m_textPartIndex += ms_maxMessageSize;
-        if (m_textPartIndex >= m_text.length()) {
+        ++m_textPartIndex;
+        if (m_textPartIndex >= m_textParts.size()) {
             m_synthesisComplete = true;
             m_webSocket.close();
         }
@@ -337,9 +340,9 @@ QString Communicate::date_to_string() {
 }
 
 QString Communicate::escape(QString data) {
-    data.replace('&', ' ');
-    data.replace('>', ' ');
-    data.replace('<', ' ');
+    data.replace('&', "&amp;");
+    data.replace('<', "&lt;");
+    data.replace('>', "&gt;");
     return data;
 }
 
@@ -347,10 +350,8 @@ QString Communicate::remove_incompatible_characters(QString str) {
     for (int i = 0; i < str.size(); ++i) {
         QChar ch = str.at(i);
         int code = ch.unicode();
-        if ((0 <= code && code <= 8) || (11 <= code && code <= 31 && code != 13)) {
+        if ((0 <= code && code <= 8) || (11 <= code && code <= 12) || (14 <= code && code <= 31)) {
             str.replace(i, 1, ' ');
-        } else if (code == 10 || code == 13) {
-            str.replace(i, 1, '\0');
         }
     }
     return str;
@@ -384,4 +385,97 @@ QPair<QMap<QString, QString>, QString> Communicate::get_headers_and_data(const Q
         parameters[key_value[0].trimmed()] = key_value[1].trimmed();
     }
     return qMakePair(parameters, parts[1]);
+}
+
+QString Communicate::generateMuid() {
+    return QUuid::createUuid().toString(QUuid::WithoutBraces).remove("-").toUpper();
+}
+
+int Communicate::findSafeUtf8SplitPoint(const QByteArray &text, int limit) {
+    int splitAt = qMin(limit, text.size());
+    if (splitAt <= 0) {
+        return splitAt;
+    }
+
+    int leadIndex = splitAt - 1;
+    int continuationBytes = 0;
+    while (leadIndex >= 0 && (static_cast<unsigned char>(text.at(leadIndex)) & 0xC0) == 0x80) {
+        --leadIndex;
+        ++continuationBytes;
+    }
+
+    if (continuationBytes == 0) {
+        return splitAt;
+    }
+
+    if (leadIndex < 0) {
+        return splitAt - continuationBytes;
+    }
+
+    unsigned char lead = static_cast<unsigned char>(text.at(leadIndex));
+    int expectedLength = 1;
+    if ((lead & 0xE0) == 0xC0) {
+        expectedLength = 2;
+    } else if ((lead & 0xF0) == 0xE0) {
+        expectedLength = 3;
+    } else if ((lead & 0xF8) == 0xF0) {
+        expectedLength = 4;
+    } else {
+        return leadIndex;
+    }
+
+    int actualLength = splitAt - leadIndex;
+    if (actualLength < expectedLength) {
+        return leadIndex;
+    }
+
+    return splitAt;
+}
+
+int Communicate::adjustSplitPointForXmlEntity(const QByteArray &text, int splitAt) {
+    int adjustedSplitAt = splitAt;
+    while (adjustedSplitAt > 0) {
+        int ampersandIndex = text.lastIndexOf('&', adjustedSplitAt - 1);
+        if (ampersandIndex < 0) {
+            break;
+        }
+        int semicolonIndex = text.indexOf(';', ampersandIndex);
+        if (semicolonIndex >= 0 && semicolonIndex < adjustedSplitAt) {
+            break;
+        }
+        adjustedSplitAt = ampersandIndex;
+    }
+    return adjustedSplitAt;
+}
+
+QVector<QString> Communicate::splitTextByByteLength(const QString &text, int byteLength) {
+    QByteArray bytes = text.toUtf8();
+    QVector<QString> parts;
+
+    while (bytes.size() > byteLength) {
+        int splitAt = bytes.lastIndexOf('\n', byteLength - 1);
+        if (splitAt < 0) {
+            splitAt = bytes.lastIndexOf(' ', byteLength - 1);
+        }
+        if (splitAt < 0) {
+            splitAt = findSafeUtf8SplitPoint(bytes, byteLength);
+        }
+        splitAt = adjustSplitPointForXmlEntity(bytes, splitAt);
+        if (splitAt <= 0) {
+            splitAt = qMin(byteLength, bytes.size());
+        }
+
+        QByteArray chunk = bytes.left(splitAt).trimmed();
+        if (!chunk.isEmpty()) {
+            parts.append(QString::fromUtf8(chunk));
+        }
+        bytes = bytes.mid(splitAt);
+    }
+
+    QByteArray tail = bytes.trimmed();
+    if (!tail.isEmpty()) {
+        parts.append(QString::fromUtf8(tail));
+    }
+
+    return parts;
 }

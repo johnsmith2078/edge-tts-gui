@@ -13,6 +13,7 @@
 #include <QtMultimedia/QAudioOutput>
 #include <QBuffer>
 #include <QQueue>
+#include <QVector>
 
 // Class for communicating with the service
 class Communicate : public QObject
@@ -97,9 +98,10 @@ private:
     bool m_playStarted = false;
     bool m_hasPlaybackStarted = false;
     qsizetype m_audioOffset;
+    QVector<QString> m_textParts;
 
-    static const qsizetype ms_maxMessageSize = 8192 * 16;
     static const qsizetype ms_startupSize = 8192 * 4;
+    static const int ms_maxTextByteLength = 4096;
 
 private:
     // Utility functions
@@ -122,6 +124,14 @@ private:
     QString generateSecMsGecToken();
 
     QString generateSecMsGecVersion();
+
+    QString generateMuid();
+
+    int findSafeUtf8SplitPoint(const QByteArray &text, int limit);
+
+    int adjustSplitPointForXmlEntity(const QByteArray &text, int splitAt);
+
+    QVector<QString> splitTextByByteLength(const QString &text, int byteLength);
 };
 
 #endif // COMMUNICATE_H
