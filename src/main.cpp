@@ -71,6 +71,9 @@ QString performOCR(const QImage &image) {
         }
     }
 
+    result.remove('\r');
+    result.remove('\n');
+
     return result;
 }
 
