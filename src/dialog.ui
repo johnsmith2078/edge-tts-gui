@@ -38,6 +38,22 @@
     </rect>
    </property>
   </widget>
+  <widget class="QLabel" name="labelCharCount">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>335</y>
+     <width>701</width>
+     <height>20</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Count: 0</string>
+   </property>
+   <property name="alignment">
+    <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+   </property>
+  </widget>
   <widget class="QGroupBox" name="groupBoxVoice">
    <property name="geometry">
     <rect>

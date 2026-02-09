@@ -2,6 +2,7 @@
 #include "ui_dialog.h"
 #include <QFileDialog>
 #include <QMimeData>
+#include <QRegularExpression>
 #include <QTimer>
 
 Dialog::Dialog(QWidget *parent)
@@ -28,8 +29,10 @@ Dialog::Dialog(QWidget *parent)
     ui->plainTextEditContent->setAcceptDrops(false);
 
     ui->plainTextEditContent->installEventFilter(this);
+    connect(ui->plainTextEditContent, &QPlainTextEdit::textChanged, this, &Dialog::updateTextCount);
 
     loadVoiceData();
+    updateTextCount();
 
     voice = "zh-CN, XiaoyiNeural";
 }
@@ -269,6 +272,15 @@ void Dialog::setPlaybackActive(bool active)
     }
     m_playbackActive = active;
     emit playbackActiveChanged(active);
+}
+
+void Dialog::updateTextCount()
+{
+    static const QRegularExpression whitespaceRegex(QStringLiteral("\\s+"));
+    QString text = ui->plainTextEditContent->toPlainText();
+    text.remove(whitespaceRegex);
+    const qsizetype charCount = text.size();
+    ui->labelCharCount->setText(QStringLiteral("\u5B57\u6570: %1").arg(charCount));
 }
 
 void Dialog::on_radioButtonXiaoxiao_clicked(bool checked)

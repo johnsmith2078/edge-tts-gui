@@ -90,6 +90,8 @@ private:
 
     void setPlaybackActive(bool active);
 
+    void updateTextCount();
+
     QMap<QString, QMap<QString, QString>> data; // 存储语言、语音名称和代码
 
 private slots:
