@@ -133,7 +133,7 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
                 QString ocrResult = performOCR(clipboardImage);
                 Dialog::getInstance().playText(ocrResult);
                 deleteResultFiles();
-            } else {
+            } else if (!trimmedText.isEmpty()) {
                 Dialog::getInstance().playText(copiedText);
             }
         }

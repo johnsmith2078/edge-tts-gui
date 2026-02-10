@@ -52,6 +52,13 @@ void Dialog::onPlayFinished()
 
 void Dialog::playText(const QString& text)
 {
+    const QString trimmedText = text.trimmed();
+    if (trimmedText.isEmpty()) {
+        m_autoRetryEnabled = false;
+        setManuallyStopped(true);
+        return;
+    }
+
     constexpr int kMaxAutoRetries = 5;
     m_autoRetryText = text;
     m_autoRetriesRemaining = kMaxAutoRetries;
@@ -75,6 +82,11 @@ bool Dialog::isPlaybackActive() const
 
 void Dialog::startAutoRetryAttempt()
 {
+    if (!m_autoRetryEnabled || m_autoRetryText.trimmed().isEmpty()) {
+        m_autoRetryEnabled = false;
+        return;
+    }
+
     const int attemptSerial = ++m_autoAttemptSerial;
     ui->plainTextEditContent->setPlainText(m_autoRetryText);
     emit ui->pushButtonPlay->clicked(true);
@@ -114,7 +126,6 @@ void Dialog::handleAutoRetryFinished()
 
 void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived)
 {
-    constexpr int kEdgeStartupSize = 8192 * 4;
     constexpr int kNoPlaybackTimeoutMsEdge = 8000;
 
     QTimer::singleShot(kNoPlaybackTimeoutMsEdge, this, [this, attemptSerial, lastEdgeBytesReceived]() {
@@ -129,7 +140,7 @@ void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeByt
 
         const qsizetype bytesReceived = m_comm.audioBytesReceived();
         const bool stalled = (lastEdgeBytesReceived >= 0 && bytesReceived == lastEdgeBytesReceived);
-        if (bytesReceived == 0 || bytesReceived >= kEdgeStartupSize || stalled) {
+        if (m_comm.isSynthesisComplete() || stalled) {
             emit stop();
             return;
         }

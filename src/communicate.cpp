@@ -71,21 +71,50 @@ Communicate::Communicate(QObject *parent)
             return;
         }
         m_playbackErrorOccurred = true;
+        m_switchingPlaybackSource = false;
         qDebug() << "Media player error:" << errorString;
-        emit finished();
+        notifyFinishedOnce();
     });
 
-    QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, [&](QMediaPlayer::MediaStatus status) {
-        if (status == QMediaPlayer::EndOfMedia) {
-            emit finished();
+    QObject::connect(m_player, &QMediaPlayer::mediaStatusChanged, this, [this](QMediaPlayer::MediaStatus status) {
+        if (status != QMediaPlayer::EndOfMedia) {
+            return;
         }
+
+        if (m_switchingPlaybackSource) {
+            // Ignore transient EndOfMedia fired while we are replacing the source.
+            return;
+        }
+
+        if (!m_fileName.isEmpty()) {
+            return;
+        }
+
+        if (m_stopRequested || m_playbackErrorOccurred) {
+            notifyFinishedOnce();
+            return;
+        }
+
+        if (!m_readyPlaybackChunks.isEmpty()) {
+            // Continue with next fully-synthesized segment.
+            tryStartOrContinuePlayback();
+            return;
+        }
+
+        if (!m_synthesisComplete) {
+            // Producer has not completed current/next segment yet. Wait silently.
+            return;
+        }
+
+        notifyFinishedOnce();
     });
 
     // connect this->stop() to player->stop() and emit finished()
     QObject::connect(this, &Communicate::stop, m_player, &QMediaPlayer::stop);
 
-    QObject::connect(this, &Communicate::stop, [&]() {
-        emit finished();
+    QObject::connect(this, &Communicate::stop, this, [this]() {
+        m_switchingPlaybackSource = false;
+        notifyFinishedOnce();
     });
 }
 
@@ -98,7 +127,6 @@ Communicate::~Communicate() {
 void Communicate::setText(QString text)
 {
     m_text = escape(remove_incompatible_characters(text));
-    m_textParts = splitTextByByteLength(m_text, ms_maxTextByteLength);
 }
 
 void Communicate::setVoice(QString voice)
@@ -144,20 +172,34 @@ bool Communicate::hasPlaybackError() const
 
 
 void Communicate::start() {
+    m_player->stop();
+    m_player->setSource(QUrl());
+    m_audioBuffer.close();
+
     m_playStarted = false;
     m_hasPlaybackStarted = false;
     m_playbackErrorOccurred = false;
     m_stopRequested = false;
     m_synthesisComplete = false;
+    m_finishedEmitted = false;
+    m_switchingPlaybackSource = false;
     m_downloadAudio = false;
     m_textPartIndex = 0;
     m_audioOffset = 0;
     m_audioDataReceived.clear();
+    m_currentTurnAudio.clear();
+    m_readyPlaybackChunks.clear();
+
+    if (m_fileName.isEmpty()) {
+        m_textParts = splitTextForPlayback(m_text, ms_initialTextByteLength, ms_targetTextByteLength);
+    } else {
+        m_textParts = splitTextByByteLength(m_text, ms_maxTextByteLength);
+    }
 
     qsizetype scaleSize = m_text.size() * 500;
     qsizetype minSize = 1024 * 1024;
     qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
-    m_audioDataReceived.resize(defaultSize, 0);
+    m_audioDataReceived.reserve(defaultSize);
 
     // 添加 Sec-MS-GEC 和 Sec-MS-GEC-Version 参数
     QUrl url(WSS_URL + "&Sec-MS-GEC=" + generateSecMsGecToken() +
@@ -200,8 +242,6 @@ void Communicate::sendNextTextPart() {
 }
 
 void Communicate::onConnected() {
-    m_textPartIndex = 0;
-
     sendNextTextPart();
 }
 
@@ -222,12 +262,14 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
     }
 
     QByteArray audioData = message.mid(headerLength + 2);
-    m_audioDataReceived.replace(m_audioOffset, audioData.size(), audioData);
-    m_audioOffset += audioData.size();
+    if (audioData.isEmpty()) {
+        return;
+    }
 
-    if (!m_playStarted && m_fileName.isEmpty() && m_audioOffset >= ms_startupSize) {
-        play();
-        m_playStarted = true;
+    m_audioDataReceived.append(audioData);
+    m_audioOffset = m_audioDataReceived.size();
+    if (m_fileName.isEmpty()) {
+        m_currentTurnAudio.append(audioData);
     }
 }
 
@@ -236,12 +278,25 @@ void Communicate::onTextMessageReceived(const QString &message) {
     auto path = parameters.value("Path");
     if (path == "turn.start") {
         m_downloadAudio = true;
+        if (m_fileName.isEmpty()) {
+            m_currentTurnAudio.clear();
+        }
     } else if (path == "turn.end") {
         m_downloadAudio = false;
+
+        if (m_fileName.isEmpty() && !m_currentTurnAudio.isEmpty()) {
+            m_readyPlaybackChunks.enqueue(m_currentTurnAudio);
+            m_currentTurnAudio.clear();
+            tryStartOrContinuePlayback();
+        }
+
         ++m_textPartIndex;
         if (m_textPartIndex >= m_textParts.size()) {
             m_synthesisComplete = true;
             m_webSocket.close();
+            if (m_fileName.isEmpty()) {
+                tryStartOrContinuePlayback();
+            }
         }
         // End of audio data
         emit audioDataReceived();
@@ -291,42 +346,84 @@ void Communicate::save() {
 
 void Communicate::play()
 {
-    if (m_audioDataReceived.size() < ms_startupSize) {
-        return;
-    }
-    m_player->setSource(QUrl());
-    m_audioBuffer.close();
-    m_audioBuffer.setBuffer(&m_audioDataReceived);
-    m_audioBuffer.open(QIODevice::ReadOnly);
-    m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
-    m_player->play();
+    tryStartOrContinuePlayback();
 }
 
 void Communicate::forcePlay()
 {
-    // qDebug() << "force play";
+    tryStartOrContinuePlayback();
+}
+
+void Communicate::notifyFinishedOnce()
+{
+    if (m_finishedEmitted) {
+        return;
+    }
+
+    m_finishedEmitted = true;
+    emit finished();
+}
+
+void Communicate::tryStartOrContinuePlayback()
+{
+    if (!m_fileName.isEmpty() || m_stopRequested || m_playbackErrorOccurred || m_finishedEmitted) {
+        return;
+    }
+
+    if (m_player->playbackState() == QMediaPlayer::PlayingState) {
+        return;
+    }
+
+    if (m_readyPlaybackChunks.isEmpty()) {
+        if (m_synthesisComplete && m_playStarted) {
+            notifyFinishedOnce();
+        }
+        return;
+    }
+
+    QByteArray nextChunk = m_readyPlaybackChunks.dequeue();
+    if (nextChunk.isEmpty()) {
+        if (m_synthesisComplete && m_readyPlaybackChunks.isEmpty()) {
+            notifyFinishedOnce();
+        }
+        return;
+    }
+
+    m_playStarted = true;
+    m_switchingPlaybackSource = true;
     m_player->setSource(QUrl());
     m_audioBuffer.close();
-    m_audioBuffer.setData(m_audioDataReceived.left(m_audioOffset));
+    m_audioBuffer.setData(nextChunk);
     m_audioBuffer.open(QIODevice::ReadOnly);
     m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
     m_player->play();
+    m_switchingPlaybackSource = false;
 }
 
 void Communicate::onDisconnected() {
     if (!m_fileName.isEmpty()) {
         save();
+        return;
     }
-    else if (m_stopRequested || m_playbackErrorOccurred) {
+
+    if (m_stopRequested || m_playbackErrorOccurred) {
         // Do not auto-play if user stopped or playback already failed.
         return;
     }
-    else if (!m_playStarted && m_audioOffset > 0 && m_audioOffset < ms_startupSize) {
-        forcePlay();
-        m_playStarted = true;
+
+    if (!m_synthesisComplete) {
+        // WebSocket disconnected unexpectedly; treat current data as final snapshot.
+        m_synthesisComplete = true;
+        if (!m_currentTurnAudio.isEmpty()) {
+            m_readyPlaybackChunks.enqueue(m_currentTurnAudio);
+            m_currentTurnAudio.clear();
+        }
     }
-    else if (!m_playStarted && m_audioOffset == 0) {
-        emit finished();
+
+    tryStartOrContinuePlayback();
+
+    if (!m_playStarted && m_audioOffset == 0) {
+        notifyFinishedOnce();
     }
 }
 
@@ -448,15 +545,95 @@ int Communicate::adjustSplitPointForXmlEntity(const QByteArray &text, int splitA
     return adjustedSplitAt;
 }
 
+namespace {
+
+const QVector<QByteArray> &punctuationMarks() {
+    static const QVector<QByteArray> marks = {
+        QByteArrayLiteral("\n"),
+        QByteArrayLiteral("."),
+        QByteArrayLiteral("!"),
+        QByteArrayLiteral("?"),
+        QByteArrayLiteral(","),
+        QByteArrayLiteral("\xE3\x80\x82"), // CJK period
+        QByteArrayLiteral("\xEF\xBC\x81"), // CJK exclamation mark
+        QByteArrayLiteral("\xEF\xBC\x9F"), // CJK question mark
+        QByteArrayLiteral("\xEF\xBC\x8C"), // CJK comma
+        QByteArrayLiteral("\xE3\x80\x81"), // ideographic comma
+        QByteArrayLiteral("\xEF\xBC\x9B"), // CJK semicolon
+        QByteArrayLiteral("\xEF\xBC\x9A"), // CJK colon
+        QByteArrayLiteral("\xE2\x80\xA6")  // horizontal ellipsis
+    };
+    return marks;
+}
+
+int findLastPunctuationSplitPoint(const QByteArray &text, int limit) {
+    const int safeLimit = qMin(limit, text.size());
+    if (safeLimit <= 0) {
+        return -1;
+    }
+
+    int bestSplitAt = -1;
+    const QVector<QByteArray> &marks = punctuationMarks();
+    for (const QByteArray &mark : marks) {
+        if (mark.isEmpty() || safeLimit < mark.size()) {
+            continue;
+        }
+
+        const int searchFrom = safeLimit - mark.size();
+        const int index = text.lastIndexOf(mark, searchFrom);
+        if (index < 0) {
+            continue;
+        }
+
+        const int candidateSplitAt = index + mark.size();
+        if (candidateSplitAt > bestSplitAt) {
+            bestSplitAt = candidateSplitAt;
+        }
+    }
+
+    return bestSplitAt;
+}
+
+int findFirstPunctuationSplitPoint(const QByteArray &text, int startAt, int hardLimit) {
+    const int safeStart = qMax(0, startAt);
+    const int safeHardLimit = qMin(hardLimit, text.size());
+    if (safeStart >= safeHardLimit) {
+        return -1;
+    }
+
+    int bestSplitAt = -1;
+    const QVector<QByteArray> &marks = punctuationMarks();
+    for (const QByteArray &mark : marks) {
+        if (mark.isEmpty()) {
+            continue;
+        }
+
+        const int index = text.indexOf(mark, safeStart);
+        if (index < 0) {
+            continue;
+        }
+
+        const int candidateSplitAt = index + mark.size();
+        if (candidateSplitAt > safeHardLimit) {
+            continue;
+        }
+
+        if (bestSplitAt < 0 || candidateSplitAt < bestSplitAt) {
+            bestSplitAt = candidateSplitAt;
+        }
+    }
+
+    return bestSplitAt;
+}
+
+} // namespace
+
 QVector<QString> Communicate::splitTextByByteLength(const QString &text, int byteLength) {
     QByteArray bytes = text.toUtf8();
     QVector<QString> parts;
 
     while (bytes.size() > byteLength) {
-        int splitAt = bytes.lastIndexOf('\n', byteLength - 1);
-        if (splitAt < 0) {
-            splitAt = bytes.lastIndexOf(' ', byteLength - 1);
-        }
+        int splitAt = findLastPunctuationSplitPoint(bytes, byteLength);
         if (splitAt < 0) {
             splitAt = findSafeUtf8SplitPoint(bytes, byteLength);
         }
@@ -475,6 +652,50 @@ QVector<QString> Communicate::splitTextByByteLength(const QString &text, int byt
     QByteArray tail = bytes.trimmed();
     if (!tail.isEmpty()) {
         parts.append(QString::fromUtf8(tail));
+    }
+
+    return parts;
+}
+
+QVector<QString> Communicate::splitTextForPlayback(const QString &text, int initialByteLength, int subsequentByteLength) {
+    QByteArray bytes = text.toUtf8();
+    QVector<QString> parts;
+    const int safeInitialLength = qMax(64, qMin(initialByteLength, ms_maxTextByteLength));
+    const int safeMaxLength = qMax(safeInitialLength, qMin(subsequentByteLength, ms_maxTextByteLength));
+    int currentLimit = safeInitialLength;
+
+    while (!bytes.isEmpty()) {
+        if (bytes.size() <= currentLimit) {
+            QByteArray tail = bytes.trimmed();
+            if (!tail.isEmpty()) {
+                parts.append(QString::fromUtf8(tail));
+            }
+            break;
+        }
+
+        int splitAt = findLastPunctuationSplitPoint(bytes, currentLimit);
+        if (splitAt < 0 && safeMaxLength > currentLimit) {
+            splitAt = findFirstPunctuationSplitPoint(bytes, currentLimit, safeMaxLength);
+        }
+        if (splitAt < 0) {
+            const int fallbackLimit = qMin(safeMaxLength, bytes.size());
+            splitAt = findSafeUtf8SplitPoint(bytes, fallbackLimit);
+        }
+        splitAt = adjustSplitPointForXmlEntity(bytes, splitAt);
+        if (splitAt <= 0) {
+            splitAt = qMin(currentLimit, bytes.size());
+        }
+
+        QByteArray chunk = bytes.left(splitAt).trimmed();
+        if (!chunk.isEmpty()) {
+            parts.append(QString::fromUtf8(chunk));
+        }
+
+        bytes = bytes.mid(splitAt);
+        // Extreme-fast-start profile: keep early growth small and smooth,
+        // and still ramp slowly in later chunks to avoid long synthesis gaps.
+        const int growthStep = qMax(16, qMin(40, currentLimit / 8));
+        currentLimit = qMin(safeMaxLength, currentLimit + growthStep);
     }
 
     return parts;

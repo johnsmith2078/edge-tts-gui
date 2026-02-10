@@ -86,7 +86,7 @@ private:
     QWebSocket m_webSocket;
     QByteArray m_audioDataReceived = "";
     bool m_downloadAudio = false;
-    qsizetype m_textPartIndex;
+    qsizetype m_textPartIndex = 0;
     QString m_date;
     bool m_synthesisComplete = false;
     bool m_stopRequested = false;
@@ -97,11 +97,16 @@ private:
     QBuffer m_audioBuffer;
     bool m_playStarted = false;
     bool m_hasPlaybackStarted = false;
-    qsizetype m_audioOffset;
+    qsizetype m_audioOffset = 0;
+    bool m_finishedEmitted = false;
+    bool m_switchingPlaybackSource = false;
+    QByteArray m_currentTurnAudio;
+    QQueue<QByteArray> m_readyPlaybackChunks;
     QVector<QString> m_textParts;
 
-    static const qsizetype ms_startupSize = 8192 * 4;
     static const int ms_maxTextByteLength = 4096;
+    static const int ms_initialTextByteLength = 80;
+    static const int ms_targetTextByteLength = 780;
 
 private:
     // Utility functions
@@ -132,6 +137,12 @@ private:
     int adjustSplitPointForXmlEntity(const QByteArray &text, int splitAt);
 
     QVector<QString> splitTextByByteLength(const QString &text, int byteLength);
+
+    QVector<QString> splitTextForPlayback(const QString &text, int initialByteLength, int subsequentByteLength);
+
+    void notifyFinishedOnce();
+
+    void tryStartOrContinuePlayback();
 };
 
 #endif // COMMUNICATE_H
