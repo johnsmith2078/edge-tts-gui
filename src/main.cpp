@@ -37,15 +37,15 @@ QString performOCR(const QImage &image) {
     QProcess process;
 
     // 设置程序路径
-    QString program = "./OcrLiteOnnx-1.6.1/win-BIN-x64/OcrLiteOnnx.exe";
+    QString program = "./RapidOCR/win-BIN-CPU-x64/RapidOcrOnnx.exe";
 
     // 设置参数
     QStringList arguments;
-    arguments << "--models" << "./OcrLiteOnnx-1.6.1/models"
-              << "--det" << "dbnet.onnx"
-              << "--cls" << "angle_net.onnx"
-              << "--rec" << "crnn_lite_lstm.onnx"
-              << "--keys" << "keys.txt"
+    arguments << "--models" << "./RapidOCR/models"
+              << "--det" << "ch_PP-OCRv4_det_infer.onnx"
+              << "--cls" << "ch_ppocr_mobile_v2.0_cls_infer.onnx"
+              << "--rec" << "ch_PP-OCRv4_rec_infer.onnx"
+              << "--keys" << "ppocr_keys_v1.txt"
               << "--image" << tempFilePath;
 
     // 启动程序
