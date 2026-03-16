@@ -25,6 +25,12 @@ void simulateCtrlC() {
     keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);   // 释放 Ctrl 键
 }
 
+QString removeLineBreaks(QString text) {
+    text.remove('\r');
+    text.remove('\n');
+    return text;
+}
+
 QString performOCR(const QImage &image) {
     // 将剪切板中的图片保存到临时文件
     QTemporaryFile tempFile;
@@ -66,10 +72,7 @@ QString performOCR(const QImage &image) {
         }
     }
 
-    result.remove('\r');
-    result.remove('\n');
-
-    return result;
+    return removeLineBreaks(result);
 }
 
 void deleteResultFiles() {
@@ -124,17 +127,17 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             }
 
             const QString copiedText = clipboard->text();
-            const QString trimmedText = copiedText.trimmed();
+            const QString textForTts = removeLineBreaks(copiedText).trimmed();
             const bool clipboardChanged = GetClipboardSequenceNumber() != prevClipboardSeq;
-            const bool hasCopiedText = !trimmedText.isEmpty() && (clipboardChanged || copiedText != prevText);
+            const bool hasCopiedText = !textForTts.isEmpty() && (clipboardChanged || copiedText != prevText);
             if (hasCopiedText) {
-                Dialog::getInstance().playText(copiedText);
+                Dialog::getInstance().playText(textForTts);
             } else if (hasImage) {
                 QString ocrResult = performOCR(clipboardImage);
                 Dialog::getInstance().playText(ocrResult);
                 deleteResultFiles();
-            } else if (!trimmedText.isEmpty()) {
-                Dialog::getInstance().playText(copiedText);
+            } else if (!textForTts.isEmpty()) {
+                Dialog::getInstance().playText(textForTts);
             }
         }
     }
