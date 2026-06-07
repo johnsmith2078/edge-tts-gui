@@ -17,6 +17,109 @@ void sleepms(uint64_t ms) {
 
 static HHOOK g_hook;
 
+namespace {
+
+constexpr wchar_t kSingleInstanceMutexName[] = L"Local\\EdgeTtsGuiSingleInstanceMutex";
+constexpr wchar_t kSingleInstanceMappingName[] = L"Local\\EdgeTtsGuiSingleInstanceWindow";
+constexpr int kActivationRetryCount = 20;
+constexpr int kActivationRetryDelayMs = 50;
+
+using WindowHandleValue = UINT_PTR;
+
+HWND readMainWindowHandle()
+{
+    HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, kSingleInstanceMappingName);
+    if (!mapping) {
+        return nullptr;
+    }
+
+    auto view = static_cast<const WindowHandleValue *>(MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(WindowHandleValue)));
+    if (!view) {
+        CloseHandle(mapping);
+        return nullptr;
+    }
+
+    HWND hwnd = reinterpret_cast<HWND>(*view);
+    UnmapViewOfFile(view);
+    CloseHandle(mapping);
+
+    return IsWindow(hwnd) ? hwnd : nullptr;
+}
+
+HANDLE registerMainWindowHandle(HWND hwnd)
+{
+    HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(WindowHandleValue),
+                                       kSingleInstanceMappingName);
+    if (!mapping) {
+        return nullptr;
+    }
+
+    auto view = static_cast<WindowHandleValue *>(MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, sizeof(WindowHandleValue)));
+    if (!view) {
+        CloseHandle(mapping);
+        return nullptr;
+    }
+
+    *view = reinterpret_cast<WindowHandleValue>(hwnd);
+    FlushViewOfFile(view, sizeof(WindowHandleValue));
+    UnmapViewOfFile(view);
+
+    return mapping;
+}
+
+void bringWindowToFront(HWND hwnd)
+{
+    if (!IsWindow(hwnd)) {
+        return;
+    }
+
+    if (IsIconic(hwnd)) {
+        ShowWindow(hwnd, SW_RESTORE);
+    } else {
+        ShowWindow(hwnd, SW_SHOW);
+    }
+
+    DWORD targetThreadId = GetWindowThreadProcessId(hwnd, nullptr);
+    DWORD currentThreadId = GetCurrentThreadId();
+    DWORD foregroundThreadId = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+
+    const BOOL attachedToTarget = currentThreadId != targetThreadId
+                                      ? AttachThreadInput(currentThreadId, targetThreadId, TRUE)
+                                      : FALSE;
+    const BOOL attachedToForeground = foregroundThreadId != 0
+                                          && foregroundThreadId != currentThreadId
+                                          && foregroundThreadId != targetThreadId
+                                          ? AttachThreadInput(currentThreadId, foregroundThreadId, TRUE)
+                                          : FALSE;
+
+    SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+    BringWindowToTop(hwnd);
+    SetForegroundWindow(hwnd);
+    SetFocus(hwnd);
+
+    if (attachedToForeground) {
+        AttachThreadInput(currentThreadId, foregroundThreadId, FALSE);
+    }
+    if (attachedToTarget) {
+        AttachThreadInput(currentThreadId, targetThreadId, FALSE);
+    }
+}
+
+void activateExistingInstance()
+{
+    for (int i = 0; i < kActivationRetryCount; ++i) {
+        HWND hwnd = readMainWindowHandle();
+        if (hwnd) {
+            bringWindowToFront(hwnd);
+            return;
+        }
+
+        Sleep(kActivationRetryDelayMs);
+    }
+}
+
+} // namespace
+
 // 模拟 Ctrl+C 组合键按下
 void simulateCtrlC() {
     keybd_event(VK_CONTROL, 0, 0, 0);   // 按下 Ctrl 键
@@ -147,8 +250,22 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
 // 全局鼠标钩子的回调函数
 int main(int argc, char *argv[])
 {
+    HANDLE singleInstanceMutex = CreateMutexW(nullptr, TRUE, kSingleInstanceMutexName);
+    if (!singleInstanceMutex) {
+        return 1;
+    }
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        activateExistingInstance();
+        CloseHandle(singleInstanceMutex);
+        return 0;
+    }
+
     QApplication a(argc, argv);
-    Dialog::getInstance().show();
+    Dialog& dialog = Dialog::getInstance();
+    dialog.show();
+
+    HANDLE windowMapping = registerMainWindowHandle(reinterpret_cast<HWND>(dialog.winId()));
 
     g_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
     int ret = a.exec();
@@ -157,6 +274,12 @@ int main(int argc, char *argv[])
         UnhookWindowsHookEx(g_hook);
         g_hook = nullptr;
     }
+
+    if (windowMapping) {
+        CloseHandle(windowMapping);
+    }
+    ReleaseMutex(singleInstanceMutex);
+    CloseHandle(singleInstanceMutex);
 
     return ret;
 }

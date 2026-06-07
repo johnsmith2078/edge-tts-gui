@@ -4,3 +4,4 @@ build
 src/.qtcreator
 dist/
 *.evb
+.codegraph/
