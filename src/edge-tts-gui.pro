@@ -11,11 +11,13 @@ CONFIG += c++17
 SOURCES += \
     communicate.cpp \
     main.cpp \
-    dialog.cpp
+    dialog.cpp \
+    streamingprogressbar.cpp
 
 HEADERS += \
     communicate.h \
-    dialog.h
+    dialog.h \
+    streamingprogressbar.h
 
 FORMS += \
     dialog.ui

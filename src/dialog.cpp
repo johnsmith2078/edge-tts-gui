@@ -2,6 +2,8 @@
 #include "ui_dialog.h"
 #include <QFileDialog>
 #include <QMimeData>
+#include <QPropertyAnimation>
+#include <QEasingCurve>
 #include <QRegularExpression>
 #include <QTimer>
 
@@ -11,6 +13,9 @@ Dialog::Dialog(QWidget *parent)
     , m_comm()
 {
     ui->setupUi(this);
+    m_saveProgressAnimation = new QPropertyAnimation(ui->progressBarSave, "value", this);
+    m_saveProgressAnimation->setDuration(220);
+    m_saveProgressAnimation->setEasingCurve(QEasingCurve::OutCubic);
 
     // connect this->send() to this->m_comm.start()
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
@@ -20,12 +25,19 @@ Dialog::Dialog(QWidget *parent)
 
     connect(&m_comm, &Communicate::saveFinished, [&]() {
         m_savingAudio = false;
+        m_saveProgressAnimation->stop();
+        ui->progressBarSave->setValue(0);
+        ui->progressBarSave->setVisible(false);
         ui->pushButtonSave->setDisabled(false);
         ui->pushButtonSave->setText("💾 保存");
         ui->pushButtonPlay->setDisabled(false);
     });
     connect(&m_comm, &Communicate::saveProgressChanged, this, [this](int percent) {
-        ui->pushButtonSave->setText(QString("⏳ 保存中 %1%").arg(percent));
+        ui->progressBarSave->setVisible(true);
+        m_saveProgressAnimation->stop();
+        m_saveProgressAnimation->setStartValue(ui->progressBarSave->value());
+        m_saveProgressAnimation->setEndValue(percent);
+        m_saveProgressAnimation->start();
     });
 
     connect(ui->comboBoxLanguage, &QComboBox::currentTextChanged, this, &Dialog::onLanguageChanged);
@@ -281,8 +293,11 @@ void Dialog::on_pushButtonSave_clicked()
     lastDir = fileName;
 
     m_savingAudio = true;
+    m_saveProgressAnimation->stop();
+    ui->progressBarSave->setValue(0);
+    ui->progressBarSave->setVisible(true);
     ui->pushButtonSave->setDisabled(true);
-    ui->pushButtonSave->setText("⏳ 保存中 0%");
+    ui->pushButtonSave->setText("⏳ 保存中");
     ui->pushButtonPlay->setDisabled(true);
 
     setCommunicate(text, voice, fileName);

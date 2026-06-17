@@ -5,3 +5,5 @@ src/.qtcreator
 dist/
 *.evb
 .codegraph/
+.xmake/
+resource.rc

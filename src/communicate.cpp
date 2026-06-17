@@ -269,6 +269,15 @@ void Communicate::onBinaryMessageReceived(const QByteArray &message) {
 
     m_audioDataReceived.append(audioData);
     m_audioOffset = m_audioDataReceived.size();
+    if (!m_fileName.isEmpty() && !m_textParts.isEmpty()) {
+        int percent = static_cast<int>(((m_textPartIndex * 100) + 50) / m_textParts.size());
+        if (percent < 1) {
+            percent = 1;
+        } else if (percent > 99) {
+            percent = 99;
+        }
+        emit saveProgressChanged(percent);
+    }
     if (m_fileName.isEmpty()) {
         m_currentTurnAudio.append(audioData);
     }
@@ -293,7 +302,11 @@ void Communicate::onTextMessageReceived(const QString &message) {
 
         ++m_textPartIndex;
         if (!m_fileName.isEmpty() && !m_textParts.isEmpty()) {
-            emit saveProgressChanged(static_cast<int>((m_textPartIndex * 100) / m_textParts.size()));
+            int percent = static_cast<int>((m_textPartIndex * 100) / m_textParts.size());
+            if (percent < 1 && m_textPartIndex > 0) {
+                percent = 1;
+            }
+            emit saveProgressChanged(percent);
         }
         if (m_textPartIndex >= m_textParts.size()) {
             m_synthesisComplete = true;

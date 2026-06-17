@@ -5,12 +5,15 @@
 #include <QKeyEvent>
 #include <QMap>
 #include "communicate.h"
+#include "streamingprogressbar.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Dialog;
 }
 QT_END_NAMESPACE
+
+class QPropertyAnimation;
 
 class Dialog : public QDialog
 {
@@ -82,6 +85,7 @@ private:
     int m_lastFinishedAttemptSerial = -1;
     bool m_playbackActive = false;
     bool m_savingAudio = false;
+    QPropertyAnimation *m_saveProgressAnimation = nullptr;
 
 public:
     void setManuallyStopped(bool manuallyStopped);
