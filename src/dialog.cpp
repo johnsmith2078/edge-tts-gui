@@ -19,7 +19,13 @@ Dialog::Dialog(QWidget *parent)
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
 
     connect(&m_comm, &Communicate::saveFinished, [&]() {
+        m_savingAudio = false;
         ui->pushButtonSave->setDisabled(false);
+        ui->pushButtonSave->setText("💾 保存");
+        ui->pushButtonPlay->setDisabled(false);
+    });
+    connect(&m_comm, &Communicate::saveProgressChanged, this, [this](int percent) {
+        ui->pushButtonSave->setText(QString("⏳ 保存中 %1%").arg(percent));
     });
 
     connect(ui->comboBoxLanguage, &QComboBox::currentTextChanged, this, &Dialog::onLanguageChanged);
@@ -46,12 +52,17 @@ void Dialog::onPlayFinished()
 {
     ui->pushButtonPlay->setDisabled(false);
     ui->pushButtonPlay->setText("▶️ 播放");
+    ui->pushButtonSave->setDisabled(false);
     ui->pushButtonStop->setEnabled(false);
     setPlaybackActive(false);
 }
 
 void Dialog::playText(const QString& text)
 {
+    if (m_savingAudio) {
+        return;
+    }
+
     const QString trimmedText = text.trimmed();
     if (trimmedText.isEmpty()) {
         m_autoRetryEnabled = false;
@@ -216,6 +227,10 @@ void Dialog::setCommunicate(const QString& text, const QString& voice, const QSt
 
 void Dialog::on_pushButtonPlay_clicked()
 {
+    if (m_savingAudio) {
+        return;
+    }
+
     QString text = ui->plainTextEditContent->toPlainText();
     if (text.isEmpty()) {
         return;
@@ -223,6 +238,7 @@ void Dialog::on_pushButtonPlay_clicked()
 
     ui->pushButtonPlay->setDisabled(true);
     ui->pushButtonPlay->setText("⏳合成中...");
+    ui->pushButtonSave->setDisabled(true);
     ui->pushButtonStop->setEnabled(true);
     setPlaybackActive(true);
 
@@ -264,7 +280,10 @@ void Dialog::on_pushButtonSave_clicked()
 
     lastDir = fileName;
 
+    m_savingAudio = true;
     ui->pushButtonSave->setDisabled(true);
+    ui->pushButtonSave->setText("⏳ 保存中 0%");
+    ui->pushButtonPlay->setDisabled(true);
 
     setCommunicate(text, voice, fileName);
 

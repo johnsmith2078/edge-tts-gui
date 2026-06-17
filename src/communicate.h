@@ -70,6 +70,8 @@ signals:
 
     void saveFinished();
 
+    void saveProgressChanged(int percent);
+
     void audioDataReceived();
 
     void duplicated();

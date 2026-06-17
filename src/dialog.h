@@ -81,6 +81,7 @@ private:
     int m_autoAttemptSerial = 0;
     int m_lastFinishedAttemptSerial = -1;
     bool m_playbackActive = false;
+    bool m_savingAudio = false;
 
 public:
     void setManuallyStopped(bool manuallyStopped);

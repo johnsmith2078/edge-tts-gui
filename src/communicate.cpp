@@ -194,6 +194,7 @@ void Communicate::start() {
         m_textParts = splitTextForPlayback(m_text, ms_initialTextByteLength, ms_targetTextByteLength);
     } else {
         m_textParts = splitTextByByteLength(m_text, ms_maxTextByteLength);
+        emit saveProgressChanged(0);
     }
 
     qsizetype scaleSize = m_text.size() * 500;
@@ -291,6 +292,9 @@ void Communicate::onTextMessageReceived(const QString &message) {
         }
 
         ++m_textPartIndex;
+        if (!m_fileName.isEmpty() && !m_textParts.isEmpty()) {
+            emit saveProgressChanged(static_cast<int>((m_textPartIndex * 100) / m_textParts.size()));
+        }
         if (m_textPartIndex >= m_textParts.size()) {
             m_synthesisComplete = true;
             m_webSocket.close();
