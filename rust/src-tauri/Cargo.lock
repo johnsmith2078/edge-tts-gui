@@ -947,8 +947,10 @@ name = "edge-tts-gui-rust"
 version = "0.1.0"
 dependencies = [
  "arboard",
+ "base64 0.22.1",
  "chrono",
  "futures-util",
+ "image",
  "rfd",
  "rustls",
  "serde",

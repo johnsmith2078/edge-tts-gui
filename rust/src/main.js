@@ -3,7 +3,6 @@ import "./style.css";
 const tauri = window.__TAURI__;
 const invoke = tauri.core.invoke;
 const listen = tauri.event.listen;
-const appWindow = tauri.window.getCurrentWindow();
 
 const content = document.querySelector("#content");
 const count = document.querySelector("#count");
@@ -20,6 +19,9 @@ const presets = [...document.querySelectorAll(".preset")];
 let voices = [];
 let audio = null;
 let audioUrl = "";
+let audioQueue = [];
+let playbackJobId = 0;
+let synthesisDone = false;
 let jobId = 0;
 
 function nextJob() {
@@ -73,7 +75,46 @@ function updateCount() {
   count.textContent = `字数: ${content.value.replace(/\s+/g, "").length}`;
 }
 
+function base64ToBlob(base64) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: "audio/mpeg" });
+}
+
+function playNextChunk(jid) {
+  if (jid !== playbackJobId || audioQueue.length === 0) return;
+  const { base64 } = audioQueue.shift();
+  const blob = base64ToBlob(base64);
+  audioUrl = URL.createObjectURL(blob);
+  audio = new Audio(audioUrl);
+  audio.onended = () => {
+    URL.revokeObjectURL(audioUrl);
+    audioUrl = "";
+    audio = null;
+    if (audioQueue.length > 0) {
+      playNextChunk(jid);
+    } else if (synthesisDone) {
+      setBusy(false, "播放完成");
+      setProgress(null);
+    }
+  };
+  audio.onerror = () => {
+    if (jid === playbackJobId) {
+      stopAudio();
+      setBusy(false, "播放失败");
+      setProgress(null);
+    }
+  };
+  audio.play();
+  setBusy(true, "播放中");
+  stopButton.disabled = false;
+}
+
 function stopAudio() {
+  playbackJobId = 0;
+  synthesisDone = false;
+  audioQueue = [];
   const currentAudio = audio;
   audio = null;
   if (currentAudio) {
@@ -103,40 +144,22 @@ async function playText(text = content.value) {
   if (!trimmed) return;
 
   stopAudio();
+  synthesisDone = false;
+  audioQueue = [];
   content.value = text;
   updateCount();
 
   const currentJob = nextJob();
+  playbackJobId = currentJob;
   setBusy(true, "合成中...");
   setProgress(8);
 
   try {
-    const bytes = await invoke("synthesize_text", {
+    await invoke("synthesize_stream", {
       text,
       voice: activeVoiceCode(),
       jobId: currentJob,
     });
-    if (currentJob !== jobId) return;
-
-    const blob = new Blob([Uint8Array.from(bytes)], { type: "audio/mpeg" });
-    audioUrl = URL.createObjectURL(blob);
-    audio = new Audio(audioUrl);
-    audio.onended = () => {
-      if (currentJob !== jobId) return;
-      stopAudio();
-      setBusy(false, "播放完成");
-      setProgress(null);
-    };
-    audio.onerror = () => {
-      if (currentJob !== jobId) return;
-      stopAudio();
-      setBusy(false, "播放失败");
-      setProgress(null);
-    };
-    await audio.play();
-    setBusy(true, "播放中");
-    stopButton.disabled = false;
-    setProgress(null);
   } catch (error) {
     if (currentJob === jobId) {
       setBusy(false, String(error));
@@ -203,11 +226,28 @@ presets.forEach((button) => button.addEventListener("click", () => setVoiceCode(
 playButton.addEventListener("click", () => playText());
 stopButton.addEventListener("click", stopAll);
 saveButton.addEventListener("click", saveText);
-closeButton.addEventListener("click", () => appWindow.close());
+closeButton.addEventListener("click", () => invoke("close_window"));
 
 listen("hotkey-text", (event) => playText(event.payload));
 listen("save-progress", (event) => {
   if (event.payload.job_id === jobId) setProgress(event.payload.percent);
+});
+listen("playback-chunk", (event) => {
+  if (event.payload.job_id !== playbackJobId) return;
+  audioQueue.push({ base64: event.payload.audio_base64 });
+  if (!audio) playNextChunk(playbackJobId);
+});
+listen("playback-done", (event) => {
+  if (event.payload.job_id !== playbackJobId) return;
+  synthesisDone = true;
+  setProgress(null);
+  if (event.payload.stopped) {
+    setBusy(false, "已停止");
+    return;
+  }
+  if (audioQueue.length === 0 && !audio) {
+    setBusy(false, "播放完成");
+  }
 });
 
 voices = await invoke("get_voices");

@@ -1,8 +1,44 @@
 :root {
-  color: #172033;
-  background: #f4f7fb;
+  --text: #172033;
+  --bg: #f4f7fb;
+  --surface: #ffffff;
+  --border: #c8d2e0;
+  --focus: #2f6fed;
+  --focus-shadow: rgba(47, 111, 237, 0.18);
+  --meta: #526174;
+  --btn-border: #b8c4d4;
+  --btn-hover-bg: #eef4ff;
+  --btn-disabled-text: #8a96a8;
+  --btn-disabled-bg: #eef2f6;
+  --btn-primary-text: #ffffff;
+  --btn-primary-hover: #255bc3;
+  --progress-bg: #e7edf6;
+  --shine: rgba(255, 255, 255, 0.7);
+
+  color: var(--text);
+  background: var(--bg);
   font-family: "Segoe UI", "Microsoft YaHei", Arial, sans-serif;
   font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e0e4eb;
+    --bg: #1a1d23;
+    --surface: #23262e;
+    --border: #3a3f4b;
+    --focus: #4d8fff;
+    --focus-shadow: rgba(77, 143, 255, 0.22);
+    --meta: #949cb0;
+    --btn-border: #4a4f5b;
+    --btn-hover-bg: #2a3040;
+    --btn-disabled-text: #5a6070;
+    --btn-disabled-bg: #282c34;
+    --btn-primary-text: #ffffff;
+    --btn-primary-hover: #3a7be0;
+    --progress-bg: #2a2e38;
+    --shine: rgba(255, 255, 255, 0.12);
+  }
 }
 
 * {
@@ -13,7 +49,7 @@ body {
   margin: 0;
   min-width: 740px;
   min-height: 580px;
-  background: #f4f7fb;
+  background: var(--bg);
 }
 
 button,
@@ -41,11 +77,11 @@ textarea {
   width: 100%;
   height: 311px;
   resize: none;
-  border: 1px solid #c8d2e0;
+  border: 1px solid var(--border);
   border-radius: 6px;
   padding: 14px;
-  color: #172033;
-  background: #ffffff;
+  color: var(--text);
+  background: var(--surface);
   line-height: 1.55;
   outline: none;
 }
@@ -53,8 +89,8 @@ textarea {
 textarea:focus,
 button:focus-visible,
 select:focus-visible {
-  border-color: #2f6fed;
-  box-shadow: 0 0 0 3px rgba(47, 111, 237, 0.18);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px var(--focus-shadow);
 }
 
 .meta {
@@ -62,7 +98,7 @@ select:focus-visible {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  color: #526174;
+  color: var(--meta);
   font-size: 13px;
 }
 
@@ -78,9 +114,9 @@ select:focus-visible {
 }
 
 .group {
-  border: 1px solid #c8d2e0;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--surface);
   padding: 8px 12px 10px;
   min-width: 0;
   height: 66px;
@@ -89,7 +125,7 @@ select:focus-visible {
 
 legend {
   padding: 0 4px;
-  color: #172033;
+  color: var(--text);
   font-size: 13px;
 }
 
@@ -103,7 +139,7 @@ legend {
 .preset {
   width: 100%;
   min-width: 0;
-  height: 32px;
+  height: 36px;
   padding: 0;
   font-size: 13px;
   white-space: nowrap;
@@ -120,7 +156,7 @@ legend {
 label {
   display: grid;
   gap: 6px;
-  color: #526174;
+  color: var(--meta);
   font-size: 13px;
 }
 
@@ -138,10 +174,10 @@ label span {
 select {
   width: 100%;
   height: 36px;
-  border: 1px solid #c8d2e0;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #172033;
-  background: #ffffff;
+  color: var(--text);
+  background: var(--surface);
   outline: none;
 }
 
@@ -152,7 +188,45 @@ progress {
   width: 100%;
   max-width: 700px;
   height: 28px;
-  accent-color: #2f6fed;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  accent-color: var(--focus);
+  overflow: hidden;
+  appearance: none;
+  background: var(--progress-bg);
+}
+
+progress::-webkit-progress-bar {
+  border-radius: 6px;
+  background: var(--progress-bg);
+}
+
+progress::-webkit-progress-value {
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 0%, var(--shine) 50%, transparent 100%) 0 0 / 90px 100%,
+    linear-gradient(90deg, #2563eb, #3b82f6);
+  animation: progress-shine 16s linear infinite;
+}
+
+progress::-moz-progress-bar {
+  border-radius: 6px;
+  background:
+    linear-gradient(90deg, transparent 0%, var(--shine) 50%, transparent 100%) 0 0 / 90px 100%,
+    linear-gradient(90deg, #2563eb, #3b82f6);
+  animation: progress-shine 16s linear infinite;
+}
+
+@keyframes progress-shine {
+  from { background-position: -90px 0, 0 0; }
+  to   { background-position: 700px 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  progress::-webkit-progress-value,
+  progress::-moz-progress-bar {
+    animation: none;
+  }
 }
 
 .actions {
@@ -166,35 +240,35 @@ progress {
 button {
   width: 100px;
   height: 40px;
-  border: 1px solid #b8c4d4;
+  border: 1px solid var(--btn-border);
   border-radius: 6px;
-  color: #172033;
-  background: #ffffff;
+  color: var(--text);
+  background: var(--surface);
   cursor: pointer;
   transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
 button:hover:not(:disabled) {
-  border-color: #2f6fed;
-  background: #eef4ff;
+  border-color: var(--focus);
+  background: var(--btn-hover-bg);
 }
 
 button:disabled {
   cursor: not-allowed;
-  color: #8a96a8;
-  background: #eef2f6;
+  color: var(--btn-disabled-text);
+  background: var(--btn-disabled-bg);
 }
 
 button.primary,
 button.active {
-  border-color: #2f6fed;
-  color: #ffffff;
-  background: #2f6fed;
+  border-color: var(--focus);
+  color: var(--btn-primary-text);
+  background: var(--focus);
 }
 
 button.primary:hover:not(:disabled),
 button.active:hover:not(:disabled) {
-  background: #255bc3;
+  background: var(--btn-primary-hover);
 }
 
 .sr-only {

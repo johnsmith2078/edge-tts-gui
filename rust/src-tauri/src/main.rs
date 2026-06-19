@@ -1,11 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Once,
+        Once, OnceLock,
     },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -36,6 +36,104 @@ const TARGET_TEXT_BYTES: usize = 780;
 const VOICE_LIST: &str = include_str!("../voice_list.tsv");
 static TLS_INIT: Once = Once::new();
 
+// ── OCR resources ────────────────────────────────────────────────
+struct OcrResource {
+    path: &'static str,
+    bytes: &'static [u8],
+}
+
+macro_rules! ocr_res {
+    ($path:literal) => {
+        OcrResource {
+            path: $path,
+            bytes: include_bytes!(concat!("../rapidocr/", $path)),
+        }
+    };
+}
+
+static OCR_RESOURCES: &[OcrResource] = &[
+    ocr_res!("win-BIN-CPU-x64/RapidOcrOnnx.exe"),
+    ocr_res!("models/ch_PP-OCRv4_det_infer.onnx"),
+    ocr_res!("models/ch_PP-OCRv4_rec_infer.onnx"),
+    ocr_res!("models/ch_ppocr_mobile_v2.0_cls_infer.onnx"),
+    ocr_res!("models/ppocr_keys_v1.txt"),
+];
+
+static OCR_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+fn ocr_dir() -> &'static Path {
+    OCR_DIR.get_or_init(|| std::env::temp_dir().join("edge-tts-gui-ocr"))
+}
+
+fn ensure_ocr_extracted() -> Result<(), String> {
+    let dir = ocr_dir();
+    if dir.join("win-BIN-CPU-x64").join("RapidOcrOnnx.exe").exists() {
+        return Ok(());
+    }
+    let _ = std::fs::remove_dir_all(dir);
+    for r in OCR_RESOURCES {
+        let dest = dir.join(r.path);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
+        }
+        std::fs::write(&dest, r.bytes).map_err(|e| format!("write {}: {e}", r.path))?;
+    }
+    Ok(())
+}
+
+fn perform_ocr(image_bytes: &[u8], width: u32, height: u32) -> Result<String, String> {
+    ensure_ocr_extracted()?;
+    let dir = ocr_dir();
+    let image_path = dir.join(format!("_ocr_input_{}.png", uuid::Uuid::new_v4().simple()));
+    image::save_buffer(&image_path, image_bytes, width, height, image::ColorType::Rgba8)
+        .map_err(|e| format!("save image: {e}"))?;
+
+    let exe = dir.join("win-BIN-CPU-x64").join("RapidOcrOnnx.exe");
+    let models = dir.join("models");
+    let mut cmd = Command::new(&exe);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let output = cmd
+        .arg("--models").arg(&models)
+        .arg("--det").arg("ch_PP-OCRv4_det_infer.onnx")
+        .arg("--cls").arg("ch_ppocr_mobile_v2.0_cls_infer.onnx")
+        .arg("--rec").arg("ch_PP-OCRv4_rec_infer.onnx")
+        .arg("--keys").arg("ppocr_keys_v1.txt")
+        .arg("--image").arg(&image_path)
+        .output()
+        .map_err(|e| format!("run OCR: {e}"))?;
+
+    let _ = std::fs::remove_file(&image_path);
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("OCR exited: {}", stderr.trim()));
+    }
+
+    let raw = String::from_utf8_lossy(&output.stdout).to_string();
+    // Strip diagnostic lines before the real result
+    if let Some(pos) = raw.rfind("FullDetectTime") {
+        if let Some(nl) = raw[pos..].find('\n') {
+            return Ok(raw[pos + nl + 1..].to_string());
+        }
+    }
+    Ok(raw)
+}
+
+fn cleanup_ocr_results() {
+    if let Ok(entries) = std::fs::read_dir(".") {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if name.ends_with("-result.jpg") || name.ends_with("-result.txt") {
+                let _ = std::fs::remove_file(entry.path());
+            }
+        }
+    }
+}
+
 #[derive(Default)]
 struct AppState {
     current_job: AtomicU64,
@@ -54,6 +152,20 @@ struct ProgressPayload {
     percent: u8,
 }
 
+#[derive(Clone, Serialize)]
+struct PlaybackChunkPayload {
+    job_id: u64,
+    audio_base64: String,
+    chunk_index: usize,
+    total_chunks: usize,
+}
+
+#[derive(Clone, Serialize)]
+struct PlaybackDonePayload {
+    job_id: u64,
+    stopped: bool,
+}
+
 #[tauri::command]
 fn get_voices() -> Vec<Voice> {
     VOICE_LIST
@@ -70,6 +182,13 @@ fn get_voices() -> Vec<Voice> {
 }
 
 #[tauri::command]
+fn close_window(app: tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.close();
+    }
+}
+
+#[tauri::command]
 fn stop(state: State<'_, AppState>) {
     state.current_job.fetch_add(1, Ordering::SeqCst);
 }
@@ -83,6 +202,22 @@ async fn synthesize_text(
 ) -> Result<Vec<u8>, String> {
     state.current_job.store(job_id, Ordering::SeqCst);
     synthesize(&text, &voice, job_id, &state, None).await
+}
+
+#[tauri::command]
+async fn synthesize_stream(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    text: String,
+    voice: String,
+    job_id: u64,
+) -> Result<(), String> {
+    state.current_job.store(job_id, Ordering::SeqCst);
+    let app = app.clone();
+    tokio::spawn(async move {
+        let _ = synthesize_streaming(&text, &voice, job_id, &app).await;
+    });
+    Ok(())
 }
 
 #[tauri::command]
@@ -206,6 +341,115 @@ async fn synthesize(
     }
     emit_progress(app, job_id, 100);
     Ok(audio)
+}
+
+async fn synthesize_streaming(
+    text: &str,
+    voice: &str,
+    job_id: u64,
+    app: &tauri::AppHandle,
+) -> Result<(), String> {
+    use base64::Engine;
+    init_tls();
+    let state = app.state::<AppState>();
+    ensure_current(&state, job_id)?;
+
+    let clean = escape_xml(&remove_incompatible_characters(text));
+    let parts = split_text_for_playback(&clean, INITIAL_TEXT_BYTES, TARGET_TEXT_BYTES);
+    if parts.is_empty() {
+        return Err("文本为空".into());
+    }
+    let total = parts.len();
+
+    let url = format!(
+        "{WSS_URL}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}&ConnectionId={}",
+        generate_sec_ms_gec_token()?,
+        generate_sec_ms_gec_version(),
+        connect_id()
+    );
+    let mut request = url.into_client_request().map_err(to_string)?;
+    let headers = request.headers_mut();
+    headers.insert("Pragma", HeaderValue::from_static("no-cache"));
+    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    headers.insert("Origin", HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"));
+    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br, zstd"));
+    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
+    headers.insert("User-Agent", HeaderValue::from_str(&user_agent()).map_err(to_string)?);
+    headers.insert("Cookie", HeaderValue::from_str(&format!("muid={};", generate_muid())).map_err(to_string)?);
+
+    let (socket, _) = connect_async(request).await.map_err(|err| format!("连接失败: {err}"))?;
+    let (mut write, mut read) = socket.split();
+
+    let mut current_chunk = Vec::new();
+    let mut index = 0usize;
+    let mut downloading = false;
+    send_text_part(&mut write, &parts[index], voice).await?;
+    let _ = app.emit("save-progress", ProgressPayload { job_id, percent: 1 });
+
+    let result: Result<(), String> = async {
+        while let Some(message) = read.next().await {
+            ensure_current(&state, job_id)?;
+            match message.map_err(to_string)? {
+                Message::Binary(message) => {
+                    if !downloading {
+                        return Err("收到意外音频数据".into());
+                    }
+                    let data = parse_audio_message(&message)?;
+                    if !data.is_empty() {
+                        current_chunk.extend_from_slice(data);
+                    }
+                }
+                Message::Text(message) => {
+                    let headers = parse_headers(&message);
+                    match headers.get("Path").map(String::as_str) {
+                        Some("turn.start") => downloading = true,
+                        Some("turn.end") => {
+                            downloading = false;
+                            trim_trailing_zeros(&mut current_chunk);
+                            if !current_chunk.is_empty() {
+                                let b64 = base64::engine::general_purpose::STANDARD.encode(&current_chunk);
+                                let _ = app.emit("playback-chunk", PlaybackChunkPayload {
+                                    job_id,
+                                    audio_base64: b64,
+                                    chunk_index: index,
+                                    total_chunks: total,
+                                });
+                                current_chunk.clear();
+                            }
+                            index += 1;
+                            let _ = app.emit("save-progress", ProgressPayload {
+                                job_id,
+                                percent: full_progress(index, total),
+                            });
+                            if index >= parts.len() {
+                                break;
+                            }
+                            send_text_part(&mut write, &parts[index], voice).await?;
+                        }
+                        Some("audio.metadata" | "response") => {}
+                        _ => return Err(format!("无法识别服务响应: {message}")),
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+        Ok(())
+    }.await;
+
+    match result {
+        Ok(()) => {
+            let _ = app.emit("playback-done", PlaybackDonePayload { job_id, stopped: false });
+        }
+        Err(e) => {
+            let stopped = e == "已停止";
+            let _ = app.emit("playback-done", PlaybackDonePayload { job_id, stopped });
+            if !stopped {
+                return Err(e);
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn send_text_part<W>(write: &mut W, part: &str, voice: &str) -> Result<(), String>
@@ -503,17 +747,37 @@ fn simulate_ctrl_c() {}
 
 fn read_selected_text(app: tauri::AppHandle) {
     thread::spawn(move || {
+        let image_before = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut c| c.get_image().ok());
+
         simulate_ctrl_c();
         thread::sleep(Duration::from_millis(180));
-        let Ok(mut clipboard) = arboard::Clipboard::new() else {
-            return;
-        };
-        let Ok(text) = clipboard.get_text() else {
-            return;
-        };
-        let text = text.replace(['\r', '\n'], "").trim().to_string();
+
+        let text = arboard::Clipboard::new()
+            .ok()
+            .and_then(|mut c| c.get_text().ok())
+            .unwrap_or_default()
+            .replace(['\r', '\n'], "")
+            .trim()
+            .to_string();
+
         if !text.is_empty() {
             let _ = app.emit("hotkey-text", text);
+            return;
+        }
+
+        if let Some(img) = image_before {
+            match perform_ocr(&img.bytes, img.width as u32, img.height as u32) {
+                Ok(ocr_text) => {
+                    let cleaned = ocr_text.replace(['\r', '\n'], "").trim().to_string();
+                    if !cleaned.is_empty() {
+                        let _ = app.emit("hotkey-text", cleaned);
+                    }
+                }
+                Err(e) => eprintln!("OCR failed: {e}"),
+            }
+            cleanup_ocr_results();
         }
     });
 }
@@ -545,7 +809,7 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_voices, synthesize_text, save_audio, stop])
+        .invoke_handler(tauri::generate_handler![get_voices, synthesize_text, synthesize_stream, save_audio, stop, close_window])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

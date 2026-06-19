@@ -13,8 +13,10 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 arboard = "3"
+base64 = "0.22"
 chrono = "0.4"
 futures-util = "0.3"
+image = { version = "0.25", default-features = false, features = ["png"] }
 rfd = "0.15"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }

@@ -21,7 +21,7 @@
         "minHeight": 580,
         "maxWidth": 740,
         "maxHeight": 580,
-        "resizable": false
+        "maximizable": false
       }
     ],
     "security": {
