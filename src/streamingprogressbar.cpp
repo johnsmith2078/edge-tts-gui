@@ -42,41 +42,37 @@ void StreamingProgressBar::paintEvent(QPaintEvent *event)
 {
     QProgressBar::paintEvent(event);
 
-    if (minimum() >= maximum() || value() <= minimum() || value() >= maximum())
+    if (minimum() >= maximum() || value() <= minimum())
         return;
 
     QStyleOptionProgressBar option;
     initStyleOption(&option);
     const QRect contents = style()->subElementRect(QStyle::SE_ProgressBarContents, &option, this);
 
-    const qreal ratio = static_cast<qreal>(value() - minimum()) / (maximum() - minimum());
+    const qreal ratio = qBound(0.0, static_cast<qreal>(value() - minimum()) / (maximum() - minimum()), 1.0);
     const int filledW = static_cast<int>(contents.width() * ratio);
     if (filledW <= 0)
         return;
 
-    const int fillLeft = contents.left();
-    const int fillRight = fillLeft + filledW;
-    const int glowW = qBound(14, filledW / 4, 34);
-    const int fillH = qBound(4, contents.height() / 3, 7);
-    const int fillY = contents.center().y() - fillH / 2;
-    const int drawStart = qMax(fillLeft, fillRight - glowW);
-    const int drawEnd = fillRight;
+    const QRect fill(contents.left(), contents.top(), filledW, contents.height());
+    const qreal shineW = qBound<qreal>(28.0, contents.width() * 0.18, 90.0);
+    const qreal centerX = fill.left() - shineW + (fill.width() + shineW * 2.0) * m_streamPos;
+
+    QLinearGradient shine(centerX - shineW, 0.0, centerX + shineW, 0.0);
+    shine.setColorAt(0.00, QColor(255, 255, 255, 0));
+    shine.setColorAt(0.42, QColor(255, 255, 255, 18));
+    shine.setColorAt(0.50, QColor(255, 255, 255, 145));
+    shine.setColorAt(0.58, QColor(255, 255, 255, 18));
+    shine.setColorAt(1.00, QColor(255, 255, 255, 0));
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing);
-    painter.setClipRect(QRect(fillLeft, fillY, filledW, fillH));
+    const int shineH = qBound(4, contents.height() / 3, 7);
+    const int shineY = contents.center().y() - shineH / 2;
+    const QRect shineRect(contents.left(), shineY, contents.width(), shineH);
 
-    const qreal pulse = 0.7 + (1.0 - qAbs(m_streamPos * 2.0 - 1.0)) * 0.3;
-    const QColor edge(14, 165, 233, 0);
-    const QColor mid(14, 165, 233, static_cast<int>(150 * pulse));
-    const QColor tip(125, 211, 252, static_cast<int>(255 * pulse));
-
-    QLinearGradient gradient(drawStart, 0, drawEnd, 0);
-    gradient.setColorAt(0.0, edge);
-    gradient.setColorAt(0.55, mid);
-    gradient.setColorAt(1.0, tip);
-
+    painter.setClipRect(QRect(fill.left(), shineY, fill.width(), shineH));
     painter.setPen(Qt::NoPen);
-    painter.setBrush(gradient);
-    painter.drawRoundedRect(QRectF(drawStart, fillY, drawEnd - drawStart, fillH), fillH / 2.0, fillH / 2.0);
+    painter.setBrush(shine);
+    painter.drawRoundedRect(shineRect, shineH / 2.0, shineH / 2.0);
 }
