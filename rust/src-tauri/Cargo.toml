@@ -1,0 +1,35 @@
+[package]
+name = "edge-tts-gui-rust"
+version = "0.1.0"
+description = "Edge TTS GUI rewritten with Tauri and Rust"
+edition = "2021"
+
+[[bin]]
+name = "edge-tts-gui-rust"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+arboard = "3"
+chrono = "0.4"
+futures-util = "0.3"
+rfd = "0.15"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.10"
+tauri = { version = "2", features = [] }
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["fs", "macros", "rt-multi-thread", "time"] }
+tokio-tungstenite = { version = "0.27", features = ["rustls-tls-webpki-roots"] }
+uuid = { version = "1", features = ["v4"] }
+windows = { version = "0.62", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>文本转语音</title>
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="editor">
+        <label class="sr-only" for="content">文本内容</label>
+        <textarea id="content" spellcheck="false" placeholder="输入或拖入文本文件"></textarea>
+        <div class="meta">
+          <span id="status">就绪</span>
+          <span id="count">字数: 0</span>
+        </div>
+      </section>
+
+      <section class="controls" aria-label="语音控制">
+        <fieldset class="group presets">
+          <legend>音色</legend>
+          <button type="button" class="preset" data-code="zh-CN, XiaoxiaoNeural">晓晓(女)</button>
+          <button type="button" class="preset active" data-code="zh-CN, XiaoyiNeural">晓伊(女)</button>
+          <button type="button" class="preset" data-code="zh-CN, YunjianNeural">云健</button>
+          <button type="button" class="preset" data-code="zh-CN, YunxiNeural">云希</button>
+          <button type="button" class="preset" data-code="zh-CN, YunxiaNeural">云夏</button>
+          <button type="button" class="preset" data-code="zh-CN, YunyangNeural">云扬</button>
+        </fieldset>
+
+        <fieldset class="group selects">
+          <legend>其他音色</legend>
+          <label>
+            <span>语言</span>
+            <select id="language"></select>
+          </label>
+          <label>
+            <span>语音</span>
+            <select id="voice"></select>
+          </label>
+        </fieldset>
+      </section>
+
+      <progress id="progress" value="0" max="100" hidden></progress>
+
+      <footer class="actions">
+        <button type="button" id="play" class="primary">播放</button>
+        <button type="button" id="stop" disabled>停止</button>
+        <button type="button" id="save">保存</button>
+        <button type="button" id="close">关闭</button>
+      </footer>
+    </main>
+  </body>
+</html>
