@@ -7,8 +7,7 @@
     "dev": "vite --host 127.0.0.1 --port 1420",
     "build": "vite build",
     "tauri": "tauri",
-    "build:no-bundle": "tauri build --no-bundle",
-    "build:compressed": "npm run build:no-bundle && powershell -ExecutionPolicy Bypass -File scripts\\compress-exe.ps1"
+    "build:no-bundle": "tauri build --no-bundle"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

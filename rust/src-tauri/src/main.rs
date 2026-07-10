@@ -36,6 +36,9 @@ const TARGET_TEXT_BYTES: usize = 780;
 const VOICE_LIST: &str = include_str!("../voice_list.tsv");
 static TLS_INIT: Once = Once::new();
 
+#[cfg(target_os = "windows")]
+static MIDDLE_MOUSE_APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+
 // ── OCR resources ────────────────────────────────────────────────
 struct OcrResource {
     path: &'static str,
@@ -782,6 +785,33 @@ fn read_selected_text(app: tauri::AppHandle) {
     });
 }
 
+#[cfg(target_os = "windows")]
+unsafe extern "system" fn middle_mouse_proc(
+    n_code: i32,
+    w_param: windows::Win32::Foundation::WPARAM,
+    l_param: windows::Win32::Foundation::LPARAM,
+) -> windows::Win32::Foundation::LRESULT {
+    use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, WM_MBUTTONDOWN};
+
+    if n_code >= 0 && w_param.0 == WM_MBUTTONDOWN as usize {
+        if let Some(app) = MIDDLE_MOUSE_APP.get() {
+            read_selected_text(app.clone());
+        }
+    }
+
+    unsafe { CallNextHookEx(None, n_code, w_param, l_param) }
+}
+
+#[cfg(target_os = "windows")]
+fn register_middle_mouse(app: tauri::AppHandle) -> windows::core::Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{SetWindowsHookExW, WH_MOUSE_LL};
+
+    let _ = MIDDLE_MOUSE_APP.set(app);
+    // ponytail: process-lifetime hook; Windows removes it on exit.
+    unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(middle_mouse_proc), None, 0) }?;
+    Ok(())
+}
+
 fn main() {
     use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
 
@@ -806,6 +836,9 @@ fn main() {
             let shortcut = Shortcut::new(None, Code::F9);
             if let Err(error) = app.global_shortcut().register(shortcut) {
                 eprintln!("failed to register F9: {error}");
+            }
+            if let Err(error) = register_middle_mouse(app.handle().clone()) {
+                eprintln!("failed to register middle mouse button: {error}");
             }
             Ok(())
         })
