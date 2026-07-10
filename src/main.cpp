@@ -16,6 +16,7 @@ void sleepms(uint64_t ms) {
 }
 
 static HHOOK g_hook;
+static HHOOK g_mouseHook;
 
 namespace {
 
@@ -202,52 +203,61 @@ void deleteResultFiles() {
     }
 }
 
+void readSelectedText()
+{
+    Dialog::getInstance().setManuallyStopped(false);
+    QClipboard *clipboard = QApplication::clipboard();
+
+    // 如果剪切板里有图片，先保存一份，后续 Ctrl+C 没复制出文字时再做 OCR 兜底
+    const QMimeData *mimeData = clipboard->mimeData();
+    const bool hasImage = mimeData->hasImage();
+    const QImage clipboardImage = hasImage ? qvariant_cast<QImage>(mimeData->imageData()) : QImage();
+
+    // 先尝试 Ctrl+C 复制选中的文字；如果复制后剪贴板里有文字，则直接朗读
+    const QString prevText = clipboard->text();
+    const DWORD prevClipboardSeq = GetClipboardSequenceNumber();
+    simulateCtrlC();
+    for (int i = 0; i < 20; ++i) {
+        sleepms(25);
+        if (GetClipboardSequenceNumber() != prevClipboardSeq) {
+            break;
+        }
+    }
+
+    const QString copiedText = clipboard->text();
+    const QString textForTts = removeLineBreaks(copiedText).trimmed();
+    const bool clipboardChanged = GetClipboardSequenceNumber() != prevClipboardSeq;
+    const bool hasCopiedText = !textForTts.isEmpty() && (clipboardChanged || copiedText != prevText);
+    if (hasCopiedText) {
+        Dialog::getInstance().playText(textForTts);
+    } else if (hasImage) {
+        QString ocrResult = performOCR(clipboardImage);
+        Dialog::getInstance().playText(ocrResult);
+        deleteResultFiles();
+    } else if (!textForTts.isEmpty()) {
+        Dialog::getInstance().playText(textForTts);
+    }
+}
+
 // 全局键盘钩子的回调函数
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0 && wParam == WM_KEYDOWN) {
         KBDLLHOOKSTRUCT *pKeyBoard = (KBDLLHOOKSTRUCT *)lParam;
-        int key = pKeyBoard->vkCode;
-
-        // 检测到 F9 键
-        if (key == VK_F9) {
-            Dialog::getInstance().setManuallyStopped(false);
-            QClipboard *clipboard = QApplication::clipboard();
-
-            // 如果剪切板里有图片，先保存一份，后续 Ctrl+C 没复制出文字时再做 OCR 兜底
-            const QMimeData *mimeData = clipboard->mimeData();
-            const bool hasImage = mimeData->hasImage();
-            const QImage clipboardImage = hasImage ? qvariant_cast<QImage>(mimeData->imageData()) : QImage();
-
-            // 先尝试 Ctrl+C 复制选中的文字；如果复制后剪贴板里有文字，则直接朗读
-            const QString prevText = clipboard->text();
-            const DWORD prevClipboardSeq = GetClipboardSequenceNumber();
-            simulateCtrlC();
-            for (int i = 0; i < 20; ++i) {
-                sleepms(25);
-                if (GetClipboardSequenceNumber() != prevClipboardSeq) {
-                    break;
-                }
-            }
-
-            const QString copiedText = clipboard->text();
-            const QString textForTts = removeLineBreaks(copiedText).trimmed();
-            const bool clipboardChanged = GetClipboardSequenceNumber() != prevClipboardSeq;
-            const bool hasCopiedText = !textForTts.isEmpty() && (clipboardChanged || copiedText != prevText);
-            if (hasCopiedText) {
-                Dialog::getInstance().playText(textForTts);
-            } else if (hasImage) {
-                QString ocrResult = performOCR(clipboardImage);
-                Dialog::getInstance().playText(ocrResult);
-                deleteResultFiles();
-            } else if (!textForTts.isEmpty()) {
-                Dialog::getInstance().playText(textForTts);
-            }
+        if (pKeyBoard->vkCode == VK_F9) {
+            readSelectedText();
         }
     }
     return CallNextHookEx(g_hook, nCode, wParam, lParam);
 }
 
 // 全局鼠标钩子的回调函数
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode >= 0 && wParam == WM_MBUTTONDOWN) {
+        readSelectedText();
+    }
+    return CallNextHookEx(g_mouseHook, nCode, wParam, lParam);
+}
+
 int main(int argc, char *argv[])
 {
     HANDLE singleInstanceMutex = CreateMutexW(nullptr, TRUE, kSingleInstanceMutexName);
@@ -268,11 +278,16 @@ int main(int argc, char *argv[])
     HANDLE windowMapping = registerMainWindowHandle(reinterpret_cast<HWND>(dialog.winId()));
 
     g_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
+    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, NULL, 0);
     int ret = a.exec();
 
     if (g_hook) {
         UnhookWindowsHookEx(g_hook);
         g_hook = nullptr;
+    }
+    if (g_mouseHook) {
+        UnhookWindowsHookEx(g_mouseHook);
+        g_mouseHook = nullptr;
     }
 
     if (windowMapping) {
