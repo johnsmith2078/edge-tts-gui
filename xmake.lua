@@ -127,7 +127,7 @@ target("edge-tts-gui")
         })
 
         -- Step 3: copy RapidOCR into deploy dir (so it's bundled in virtual fs)
-        local rapidocr_src = path.join(os.projectdir(), "build", "dist", "RapidOCR")
+        local rapidocr_src = path.join(os.projectdir(), "RapidOCR")
         local rapidocr_dst = path.join(deploy_dir, "RapidOCR")
         if os.isdir(rapidocr_src) then
             print("[pack] copying RapidOCR ...")
