@@ -282,8 +282,15 @@ listen("playback-chunk", (event) => {
 listen("playback-done", (event) => {
   if (event.payload.job_id !== playbackJobId) return;
   clearPlaybackWatchdog();
-  synthesisDone = true;
   setProgress(null);
+
+  if (event.payload.error) {
+    stopAudio();
+    setBusy(false, `合成失败: ${event.payload.error}`);
+    return;
+  }
+
+  synthesisDone = true;
   if (event.payload.stopped) {
     setBusy(false, "已停止");
     return;
