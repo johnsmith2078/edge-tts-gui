@@ -2,18 +2,18 @@
 
 #include <QApplication>
 #include <QClipboard>
-#include <QMimeData>
+#include <QCoreApplication>
+#include <QDebug>
 #include <QImage>
-#include <QTemporaryFile>
+#include <QMetaObject>
+#include <QMimeData>
 #include <QProcess>
-#include <QDir>
-#include <thread>
+#include <QTemporaryDir>
+#include <QTimer>
 #include <chrono>
+#include <memory>
+#include <thread>
 #include <windows.h>
-
-void sleepms(uint64_t ms) {
-    std::this_thread::sleep_for(std::chrono::milliseconds(ms));
-}
 
 static HHOOK g_hook;
 static HHOOK g_mouseHook;
@@ -24,6 +24,8 @@ constexpr wchar_t kSingleInstanceMutexName[] = L"Local\\EdgeTtsGuiSingleInstance
 constexpr wchar_t kSingleInstanceMappingName[] = L"Local\\EdgeTtsGuiSingleInstanceWindow";
 constexpr int kActivationRetryCount = 20;
 constexpr int kActivationRetryDelayMs = 50;
+constexpr int kClipboardPollIntervalMs = 25;
+constexpr int kClipboardPollCount = 20;
 
 using WindowHandleValue = UINT_PTR;
 
@@ -50,7 +52,7 @@ HWND readMainWindowHandle()
 HANDLE registerMainWindowHandle(HWND hwnd)
 {
     HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(WindowHandleValue),
-                                       kSingleInstanceMappingName);
+                                        kSingleInstanceMappingName);
     if (!mapping) {
         return nullptr;
     }
@@ -74,11 +76,7 @@ void bringWindowToFront(HWND hwnd)
         return;
     }
 
-    if (IsIconic(hwnd)) {
-        ShowWindow(hwnd, SW_RESTORE);
-    } else {
-        ShowWindow(hwnd, SW_SHOW);
-    }
+    ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
 
     DWORD targetThreadId = GetWindowThreadProcessId(hwnd, nullptr);
     DWORD currentThreadId = GetCurrentThreadId();
@@ -114,146 +112,170 @@ void activateExistingInstance()
             bringWindowToFront(hwnd);
             return;
         }
-
         Sleep(kActivationRetryDelayMs);
     }
 }
 
-} // namespace
-
-// 模拟 Ctrl+C 组合键按下
-void simulateCtrlC() {
-    keybd_event(VK_CONTROL, 0, 0, 0);   // 按下 Ctrl 键
-    keybd_event('C', 0, 0, 0);          // 按下 C 键
-    keybd_event('C', 0, KEYEVENTF_KEYUP, 0);   // 释放 C 键
-    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);   // 释放 Ctrl 键
+void simulateCtrlC()
+{
+    keybd_event(VK_CONTROL, 0, 0, 0);
+    keybd_event('C', 0, 0, 0);
+    keybd_event('C', 0, KEYEVENTF_KEYUP, 0);
+    keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, 0);
 }
 
-QString removeLineBreaks(QString text) {
-    text.remove('\r');
-    text.remove('\n');
-    return text;
+QString normalizeText(QString text)
+{
+    text.replace("\r\n", " ");
+    text.replace('\r', ' ');
+    text.replace('\n', ' ');
+    return text.simplified();
 }
 
-QString performOCR(const QImage &image) {
-    // 将剪切板中的图片保存到临时文件
-    QTemporaryFile tempFile;
-    tempFile.setFileTemplate("temp_image_XXXXXX.png");
-    tempFile.open();
-    QString tempFilePath = tempFile.fileName();
-    image.save(tempFilePath);
+QString performOCR(const QImage &image)
+{
+    QTemporaryDir tempDir;
+    if (!tempDir.isValid()) {
+        qWarning() << "Failed to create OCR temporary directory";
+        return {};
+    }
 
-    // 创建 QProcess 对象
+    const QString imagePath = tempDir.filePath("input.png");
+    if (!image.save(imagePath)) {
+        qWarning() << "Failed to save OCR input image";
+        return {};
+    }
+
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString rapidOcrRoot = appDir + "/RapidOCR";
+    const QString program = rapidOcrRoot + "/win-BIN-CPU-x64/RapidOcrOnnx.exe";
+    const QString modelsDir = rapidOcrRoot + "/models";
+
     QProcess process;
-
-    // 设置程序路径
-    QString program = "./RapidOCR/win-BIN-CPU-x64/RapidOcrOnnx.exe";
-
-    // 设置参数
+    process.setWorkingDirectory(tempDir.path());
     QStringList arguments;
-    arguments << "--models" << "./RapidOCR/models"
+    arguments << "--models" << modelsDir
               << "--det" << "ch_PP-OCRv4_det_infer.onnx"
               << "--cls" << "ch_ppocr_mobile_v2.0_cls_infer.onnx"
               << "--rec" << "ch_PP-OCRv4_rec_infer.onnx"
               << "--keys" << "ppocr_keys_v1.txt"
-              << "--image" << tempFilePath;
+              << "--image" << imagePath;
 
-    // 启动程序
     process.start(program, arguments);
-    process.waitForFinished();
+    if (!process.waitForStarted(3000)) {
+        qWarning() << "Failed to start RapidOCR:" << process.errorString();
+        return {};
+    }
+    if (!process.waitForFinished(30000)) {
+        process.kill();
+        process.waitForFinished(1000);
+        qWarning() << "RapidOCR timed out";
+        return {};
+    }
+    if (process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
+        qWarning() << "RapidOCR failed:" << process.readAllStandardError();
+        return {};
+    }
 
-    // 获取输出结果
-    QString result = process.readAllStandardOutput();
-
-    // 使用正则表达式或字符串操作提取“FullDetectTime”后面的内容
-    int startIndex = result.lastIndexOf("FullDetectTime");
+    QString result = QString::fromUtf8(process.readAllStandardOutput());
+    const int startIndex = result.lastIndexOf("FullDetectTime");
     if (startIndex != -1) {
-        // 找到“FullDetectTime”之后的换行符的位置
-        int nextLineIndex = result.indexOf('\n', startIndex);
+        const int nextLineIndex = result.indexOf('\n', startIndex);
         if (nextLineIndex != -1) {
-            // 截取从下一行开始的内容
             result = result.mid(nextLineIndex + 1);
         }
     }
-
-    return removeLineBreaks(result);
+    return normalizeText(result);
 }
 
-void deleteResultFiles() {
-    QDir dir;
+struct ClipboardReadState {
+    QString previousText;
+    QImage fallbackImage;
+    DWORD sequence = 0;
+    int pollsRemaining = kClipboardPollCount;
+};
 
-    // 查找并删除所有结果图片
-    QStringList imageFiles = dir.entryList(QStringList() << "*-result.jpg", QDir::Files);
-    for (const QString &file : imageFiles) {
-        if (dir.remove(file)) {
-            // qDebug() << "Deleted" << file;
-        } else {
-            // qDebug() << "Failed to delete" << file;
-        }
+void finishSelectionRead(const std::shared_ptr<ClipboardReadState> &state)
+{
+    QClipboard *clipboard = QApplication::clipboard();
+    const QString copiedText = clipboard->text();
+    const QString textForTts = normalizeText(copiedText);
+    const bool clipboardChanged = GetClipboardSequenceNumber() != state->sequence;
+    const bool hasCopiedText = !textForTts.isEmpty() && (clipboardChanged || copiedText != state->previousText);
+
+    if (hasCopiedText) {
+        Dialog::getInstance().playText(textForTts);
+        return;
     }
 
-    // 查找并删除所有结果文本文件
-    QStringList textFiles = dir.entryList(QStringList() << "*-result.txt", QDir::Files);
-    for (const QString &file : textFiles) {
-        if (dir.remove(file)) {
-            // qDebug() << "Deleted" << file;
-        } else {
-            // qDebug() << "Failed to delete" << file;
-        }
+    if (!state->fallbackImage.isNull()) {
+        const QImage image = state->fallbackImage;
+        std::thread([image]() {
+            const QString ocrResult = performOCR(image);
+            if (ocrResult.isEmpty()) {
+                return;
+            }
+            QMetaObject::invokeMethod(&Dialog::getInstance(), [ocrResult]() {
+                Dialog::getInstance().playText(ocrResult);
+            }, Qt::QueuedConnection);
+        }).detach();
+        return;
     }
+
+    if (!textForTts.isEmpty()) {
+        Dialog::getInstance().playText(textForTts);
+    }
+}
+
+void pollClipboard(const std::shared_ptr<ClipboardReadState> &state)
+{
+    if (GetClipboardSequenceNumber() != state->sequence || state->pollsRemaining-- <= 0) {
+        finishSelectionRead(state);
+        return;
+    }
+    QTimer::singleShot(kClipboardPollIntervalMs, [state]() { pollClipboard(state); });
 }
 
 void readSelectedText()
 {
     Dialog::getInstance().setManuallyStopped(false);
     QClipboard *clipboard = QApplication::clipboard();
-
-    // 如果剪切板里有图片，先保存一份，后续 Ctrl+C 没复制出文字时再做 OCR 兜底
     const QMimeData *mimeData = clipboard->mimeData();
-    const bool hasImage = mimeData->hasImage();
-    const QImage clipboardImage = hasImage ? qvariant_cast<QImage>(mimeData->imageData()) : QImage();
 
-    // 先尝试 Ctrl+C 复制选中的文字；如果复制后剪贴板里有文字，则直接朗读
-    const QString prevText = clipboard->text();
-    const DWORD prevClipboardSeq = GetClipboardSequenceNumber();
+    auto state = std::make_shared<ClipboardReadState>();
+    state->previousText = clipboard->text();
+    state->sequence = GetClipboardSequenceNumber();
+    if (mimeData && mimeData->hasImage()) {
+        state->fallbackImage = qvariant_cast<QImage>(mimeData->imageData());
+    }
+
     simulateCtrlC();
-    for (int i = 0; i < 20; ++i) {
-        sleepms(25);
-        if (GetClipboardSequenceNumber() != prevClipboardSeq) {
-            break;
-        }
-    }
-
-    const QString copiedText = clipboard->text();
-    const QString textForTts = removeLineBreaks(copiedText).trimmed();
-    const bool clipboardChanged = GetClipboardSequenceNumber() != prevClipboardSeq;
-    const bool hasCopiedText = !textForTts.isEmpty() && (clipboardChanged || copiedText != prevText);
-    if (hasCopiedText) {
-        Dialog::getInstance().playText(textForTts);
-    } else if (hasImage) {
-        QString ocrResult = performOCR(clipboardImage);
-        Dialog::getInstance().playText(ocrResult);
-        deleteResultFiles();
-    } else if (!textForTts.isEmpty()) {
-        Dialog::getInstance().playText(textForTts);
-    }
+    QTimer::singleShot(kClipboardPollIntervalMs, [state]() { pollClipboard(state); });
 }
 
-// 全局键盘钩子的回调函数
-LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+void queueReadSelectedText()
+{
+    QMetaObject::invokeMethod(&Dialog::getInstance(), []() { readSelectedText(); }, Qt::QueuedConnection);
+}
+
+} // namespace
+
+LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
     if (nCode >= 0 && wParam == WM_KEYDOWN) {
-        KBDLLHOOKSTRUCT *pKeyBoard = (KBDLLHOOKSTRUCT *)lParam;
-        if (pKeyBoard->vkCode == VK_F9) {
-            readSelectedText();
+        auto *keyboard = reinterpret_cast<KBDLLHOOKSTRUCT *>(lParam);
+        if (keyboard->vkCode == VK_F9) {
+            queueReadSelectedText();
         }
     }
     return CallNextHookEx(g_hook, nCode, wParam, lParam);
 }
 
-// 全局鼠标钩子的回调函数
-LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK MouseProc(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    Q_UNUSED(lParam);
     if (nCode >= 0 && wParam == WM_MBUTTONDOWN) {
-        readSelectedText();
+        queueReadSelectedText();
     }
     return CallNextHookEx(g_mouseHook, nCode, wParam, lParam);
 }
@@ -271,15 +293,15 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    QApplication a(argc, argv);
-    Dialog& dialog = Dialog::getInstance();
+    QApplication app(argc, argv);
+    Dialog &dialog = Dialog::getInstance();
     dialog.show();
 
     HANDLE windowMapping = registerMainWindowHandle(reinterpret_cast<HWND>(dialog.winId()));
 
-    g_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, NULL, 0);
-    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, NULL, 0);
-    int ret = a.exec();
+    g_hook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, nullptr, 0);
+    g_mouseHook = SetWindowsHookEx(WH_MOUSE_LL, MouseProc, nullptr, 0);
+    const int ret = app.exec();
 
     if (g_hook) {
         UnhookWindowsHookEx(g_hook);
@@ -289,7 +311,6 @@ int main(int argc, char *argv[])
         UnhookWindowsHookEx(g_mouseHook);
         g_mouseHook = nullptr;
     }
-
     if (windowMapping) {
         CloseHandle(windowMapping);
     }
