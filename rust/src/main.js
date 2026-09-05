@@ -16,6 +16,9 @@ const saveButton = document.querySelector("#save");
 const closeButton = document.querySelector("#close");
 const presets = [...document.querySelectorAll(".preset")];
 
+const START_TIMEOUT_MS = 15000;
+const STALL_TIMEOUT_MS = 20000;
+
 let voices = [];
 let audio = null;
 let audioUrl = "";
@@ -23,6 +26,7 @@ let audioQueue = [];
 let playbackJobId = 0;
 let synthesisDone = false;
 let jobId = 0;
+let playbackWatchdog = 0;
 
 function nextJob() {
   jobId += 1;
@@ -39,6 +43,24 @@ function setBusy(busy, label = "就绪") {
 function setProgress(value) {
   progress.hidden = value == null;
   progress.value = value || 0;
+}
+
+function clearPlaybackWatchdog() {
+  if (playbackWatchdog) {
+    clearTimeout(playbackWatchdog);
+    playbackWatchdog = 0;
+  }
+}
+
+function armPlaybackWatchdog(jid, timeout = STALL_TIMEOUT_MS) {
+  clearPlaybackWatchdog();
+  playbackWatchdog = window.setTimeout(() => {
+    if (jid !== playbackJobId || synthesisDone) return;
+    stopAudio();
+    invoke("stop").catch(() => {});
+    setBusy(false, "合成超时，请重试");
+    setProgress(null);
+  }, timeout);
 }
 
 function activeVoiceCode() {
@@ -95,23 +117,33 @@ function playNextChunk(jid) {
     if (audioQueue.length > 0) {
       playNextChunk(jid);
     } else if (synthesisDone) {
+      clearPlaybackWatchdog();
       setBusy(false, "播放完成");
       setProgress(null);
     }
   };
   audio.onerror = () => {
     if (jid === playbackJobId) {
+      clearPlaybackWatchdog();
       stopAudio();
       setBusy(false, "播放失败");
       setProgress(null);
     }
   };
-  audio.play();
+  audio.play().catch(() => {
+    if (jid === playbackJobId) {
+      clearPlaybackWatchdog();
+      stopAudio();
+      setBusy(false, "无法启动播放");
+      setProgress(null);
+    }
+  });
   setBusy(true, "播放中");
   stopButton.disabled = false;
 }
 
 function stopAudio() {
+  clearPlaybackWatchdog();
   playbackJobId = 0;
   synthesisDone = false;
   audioQueue = [];
@@ -136,7 +168,11 @@ async function stopAll() {
   stopAudio();
   setBusy(false, "已停止");
   setProgress(null);
-  await invoke("stop");
+  try {
+    await invoke("stop");
+  } catch (error) {
+    statusText.textContent = String(error);
+  }
 }
 
 async function playText(text = content.value) {
@@ -153,6 +189,7 @@ async function playText(text = content.value) {
   playbackJobId = currentJob;
   setBusy(true, "合成中...");
   setProgress(8);
+  armPlaybackWatchdog(currentJob, START_TIMEOUT_MS);
 
   try {
     await invoke("synthesize_stream", {
@@ -162,6 +199,8 @@ async function playText(text = content.value) {
     });
   } catch (error) {
     if (currentJob === jobId) {
+      clearPlaybackWatchdog();
+      stopAudio();
       setBusy(false, String(error));
       setProgress(null);
     }
@@ -213,6 +252,8 @@ document.addEventListener("drop", (event) => {
   file.text().then((text) => {
     content.value = text;
     updateCount();
+  }).catch((error) => {
+    statusText.textContent = `读取文件失败: ${error}`;
   });
 });
 
@@ -234,11 +275,13 @@ listen("save-progress", (event) => {
 });
 listen("playback-chunk", (event) => {
   if (event.payload.job_id !== playbackJobId) return;
+  armPlaybackWatchdog(playbackJobId);
   audioQueue.push({ base64: event.payload.audio_base64 });
   if (!audio) playNextChunk(playbackJobId);
 });
 listen("playback-done", (event) => {
   if (event.payload.job_id !== playbackJobId) return;
+  clearPlaybackWatchdog();
   synthesisDone = true;
   setProgress(null);
   if (event.payload.stopped) {
