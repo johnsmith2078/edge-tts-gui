@@ -4,6 +4,7 @@
 #include <QBuffer>
 #include <QMap>
 #include <QQueue>
+#include <QTimer>
 #include <QVector>
 #include <QWebSocket>
 #include <QtMultimedia/QAudioOutput>
