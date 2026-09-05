@@ -1,9 +1,12 @@
 #include "dialog.h"
 #include "ui_dialog.h"
+
+#include <QEasingCurve>
 #include <QFileDialog>
+#include <QFileInfo>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QPropertyAnimation>
-#include <QEasingCurve>
 #include <QRegularExpression>
 #include <QTimer>
 
@@ -17,13 +20,12 @@ Dialog::Dialog(QWidget *parent)
     m_saveProgressAnimation->setDuration(220);
     m_saveProgressAnimation->setEasingCurve(QEasingCurve::OutCubic);
 
-    // connect this->send() to this->m_comm.start()
     connect(this, &Dialog::send, &m_comm, &Communicate::start);
     connect(&m_comm, &Communicate::finished, this, &Dialog::onPlayFinished);
     connect(&m_comm, &Communicate::finished, this, [this]() { handleAutoRetryFinished(); });
     connect(this, &Dialog::stop, &m_comm, &Communicate::stop);
 
-    connect(&m_comm, &Communicate::saveFinished, [&]() {
+    const auto resetSaveUi = [this]() {
         m_savingAudio = false;
         m_saveProgressAnimation->stop();
         ui->progressBarSave->setValue(0);
@@ -31,6 +33,12 @@ Dialog::Dialog(QWidget *parent)
         ui->pushButtonSave->setDisabled(false);
         ui->pushButtonSave->setText("💾 保存");
         ui->pushButtonPlay->setDisabled(false);
+    };
+
+    connect(&m_comm, &Communicate::saveFinished, this, resetSaveUi);
+    connect(&m_comm, &Communicate::saveFailed, this, [this, resetSaveUi](const QString &error) {
+        resetSaveUi();
+        QMessageBox::warning(this, QStringLiteral("保存失败"), error);
     });
     connect(&m_comm, &Communicate::saveProgressChanged, this, [this](int percent) {
         ui->progressBarSave->setVisible(true);
@@ -45,14 +53,15 @@ Dialog::Dialog(QWidget *parent)
 
     setAcceptDrops(true);
     ui->plainTextEditContent->setAcceptDrops(false);
-
     ui->plainTextEditContent->installEventFilter(this);
     connect(ui->plainTextEditContent, &QPlainTextEdit::textChanged, this, &Dialog::updateTextCount);
 
     loadVoiceData();
     updateTextCount();
 
-    voice = "zh-CN, XiaoyiNeural";
+    if (voice.isEmpty()) {
+        voice = "zh-CN, XiaoyiNeural";
+    }
 }
 
 Dialog::~Dialog()
@@ -69,7 +78,7 @@ void Dialog::onPlayFinished()
     setPlaybackActive(false);
 }
 
-void Dialog::playText(const QString& text)
+void Dialog::playText(const QString &text)
 {
     if (m_savingAudio) {
         return;
@@ -92,10 +101,9 @@ void Dialog::playText(const QString& text)
 
 void Dialog::stopPlayback()
 {
-    if (!m_playbackActive) {
-        return;
+    if (m_playbackActive) {
+        on_pushButtonStop_clicked();
     }
-    on_pushButtonStop_clicked();
 }
 
 bool Dialog::isPlaybackActive() const
@@ -112,7 +120,7 @@ void Dialog::startAutoRetryAttempt()
 
     const int attemptSerial = ++m_autoAttemptSerial;
     ui->plainTextEditContent->setPlainText(m_autoRetryText);
-    emit ui->pushButtonPlay->clicked(true);
+    ui->pushButtonPlay->click();
     scheduleNoPlaybackWatchdog(attemptSerial, -1);
 }
 
@@ -122,16 +130,15 @@ void Dialog::handleAutoRetryFinished()
         m_autoRetryEnabled = false;
         return;
     }
-
     if (m_lastFinishedAttemptSerial == m_autoAttemptSerial) {
         return;
     }
     m_lastFinishedAttemptSerial = m_autoAttemptSerial;
 
     const bool playbackStarted = m_comm.hasPlaybackStarted();
-    const bool hasError = m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete() || m_comm.audioBytesReceived() <= 0;
-    const bool success = playbackStarted && !hasError;
-    if (success) {
+    const bool hasError = m_comm.hasPlaybackError() || !m_comm.isSynthesisComplete()
+                          || m_comm.audioBytesReceived() <= 0;
+    if (playbackStarted && !hasError) {
         m_autoRetryEnabled = false;
         setManuallyStopped(true);
         return;
@@ -150,24 +157,20 @@ void Dialog::handleAutoRetryFinished()
 void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeBytesReceived)
 {
     constexpr int kNoPlaybackTimeoutMsEdge = 8000;
-
     QTimer::singleShot(kNoPlaybackTimeoutMsEdge, this, [this, attemptSerial, lastEdgeBytesReceived]() {
         if (!m_autoRetryEnabled || manuallyStopped || attemptSerial != m_autoAttemptSerial) {
             return;
         }
-
-        const bool playbackStarted = m_comm.hasPlaybackStarted();
-        if (playbackStarted) {
+        if (m_comm.hasPlaybackStarted()) {
             return;
         }
 
         const qsizetype bytesReceived = m_comm.audioBytesReceived();
-        const bool stalled = (lastEdgeBytesReceived >= 0 && bytesReceived == lastEdgeBytesReceived);
-        if (m_comm.isSynthesisComplete() || stalled) {
+        const bool stalled = lastEdgeBytesReceived >= 0 && bytesReceived == lastEdgeBytesReceived;
+        if (m_comm.isSynthesisComplete() || stalled || m_comm.hasPlaybackError()) {
             emit stop();
             return;
         }
-
         scheduleNoPlaybackWatchdog(attemptSerial, bytesReceived);
     });
 }
@@ -175,66 +178,54 @@ void Dialog::scheduleNoPlaybackWatchdog(int attemptSerial, qsizetype lastEdgeByt
 bool Dialog::eventFilter(QObject *obj, QEvent *event)
 {
     if (obj == ui->plainTextEditContent && event->type() == QEvent::KeyPress) {
-        QKeyEvent *keyEvent = static_cast<QKeyEvent *>(event);
-        if (keyEvent->key() == Qt::Key_Return && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonPlay->isEnabled()) {
-            // Ctrl+Enter was pressed, play
+        auto *keyEvent = static_cast<QKeyEvent *>(event);
+        if (keyEvent->key() == Qt::Key_Return && keyEvent->modifiers() == Qt::ControlModifier
+            && ui->pushButtonPlay->isEnabled()) {
             ui->pushButtonPlay->click();
             return true;
-        } else if (keyEvent->key() == Qt::Key_S && keyEvent->modifiers() == Qt::ControlModifier && ui->pushButtonSave->isEnabled()) {
-            // Ctrl+S was pressed, save
+        }
+        if (keyEvent->key() == Qt::Key_S && keyEvent->modifiers() == Qt::ControlModifier
+            && ui->pushButtonSave->isEnabled()) {
             ui->pushButtonSave->click();
             return true;
         }
     }
-
-    // pass the event on to the parent class
     return QWidget::eventFilter(obj, event);
 }
 
 void Dialog::dragEnterEvent(QDragEnterEvent *event)
 {
     if (event->mimeData()->hasUrls()) {
-        event->acceptProposedAction();  // 接受拖拽操作
+        event->acceptProposedAction();
     }
 }
 
 void Dialog::dropEvent(QDropEvent *event)
 {
     const QMimeData *mimeData = event->mimeData();
+    if (!mimeData->hasUrls() || mimeData->urls().isEmpty()) {
+        return;
+    }
 
-    if (mimeData->hasUrls()) {
-        QList<QUrl> urlList = mimeData->urls();
-        if (!urlList.isEmpty()) {
-            QString filePath = urlList.first().toLocalFile();  // 获取文件路径
-            QFile file(filePath);
-
-            // 检查是否是文本文件
-            if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QTextStream in(&file);
-                ui->plainTextEditContent->setPlainText(in.readAll());  // 读取文件并设置为文本框内容
-                file.close();
-            }
-        }
+    QFile file(mimeData->urls().first().toLocalFile());
+    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&file);
+        ui->plainTextEditContent->setPlainText(in.readAll());
     }
 }
 
-void Dialog::checkDuplicate(const QString& text, const QString& voice)
+void Dialog::checkDuplicate(const QString &text, const QString &voiceCode)
 {
-    if (text == m_lastText && voice == m_lastVoice) {
-        m_comm.setDuplicated(true);
-    } else {
-        m_comm.setDuplicated(false);
-    }
+    m_comm.setDuplicated(text == m_lastText && voiceCode == m_lastVoice);
 }
 
-void Dialog::setCommunicate(const QString& text, const QString& voice, const QString& fileName)
+void Dialog::setCommunicate(const QString &text, const QString &voiceCode, const QString &fileName)
 {
     m_comm.setText(text);
-    m_comm.setVoice(voice);
+    m_comm.setVoice(voiceCode);
     m_comm.setFileName(fileName);
-    // checkDuplicate(text, voice);
     m_lastText = text;
-    m_lastVoice = voice;
+    m_lastVoice = voiceCode;
 }
 
 void Dialog::on_pushButtonPlay_clicked()
@@ -242,9 +233,8 @@ void Dialog::on_pushButtonPlay_clicked()
     if (m_savingAudio) {
         return;
     }
-
-    QString text = ui->plainTextEditContent->toPlainText();
-    if (text.isEmpty()) {
+    const QString text = ui->plainTextEditContent->toPlainText();
+    if (text.trimmed().isEmpty()) {
         return;
     }
 
@@ -254,7 +244,7 @@ void Dialog::on_pushButtonPlay_clicked()
     ui->pushButtonStop->setEnabled(true);
     setPlaybackActive(true);
 
-    setCommunicate(text, voice, "");
+    setCommunicate(text, voice, {});
     emit send();
 }
 
@@ -267,31 +257,19 @@ void Dialog::on_pushButtonStop_clicked()
 
 void Dialog::on_pushButtonSave_clicked()
 {
-    QString text = ui->plainTextEditContent->toPlainText();
-    if (text.isEmpty()) {
+    const QString text = ui->plainTextEditContent->toPlainText();
+    if (text.trimmed().isEmpty()) {
         return;
     }
 
-    QString dir;
-    if (lastDir.isEmpty()) {
-        dir = QDir::currentPath();
-    } else {
-        dir = lastDir;
-    }
-
-    QString fileName = QFileDialog::getSaveFileName(
-        this, // 父窗口
-        "保存音频文件", // 对话框标题
-        dir, // 默认文件路径
-        "音频文件 (*.mp3)" // 文件过滤器
-    );
-
+    const QString initialPath = lastDir.isEmpty() ? QDir::currentPath() : lastDir;
+    const QString fileName = QFileDialog::getSaveFileName(
+        this, "保存音频文件", initialPath, "音频文件 (*.mp3)");
     if (fileName.isEmpty()) {
         return;
     }
 
-    lastDir = fileName;
-
+    lastDir = QFileInfo(fileName).absolutePath();
     m_savingAudio = true;
     m_saveProgressAnimation->stop();
     ui->progressBarSave->setValue(0);
@@ -301,13 +279,12 @@ void Dialog::on_pushButtonSave_clicked()
     ui->pushButtonPlay->setDisabled(true);
 
     setCommunicate(text, voice, fileName);
-
     emit send();
 }
 
-void Dialog::setManuallyStopped(bool manuallyStopped)
+void Dialog::setManuallyStopped(bool stopped)
 {
-    this->manuallyStopped = manuallyStopped;
+    manuallyStopped = stopped;
 }
 
 void Dialog::setPlaybackActive(bool active)
@@ -324,118 +301,58 @@ void Dialog::updateTextCount()
     static const QRegularExpression whitespaceRegex(QStringLiteral("\\s+"));
     QString text = ui->plainTextEditContent->toPlainText();
     text.remove(whitespaceRegex);
-    const qsizetype charCount = text.size();
-    ui->labelCharCount->setText(QStringLiteral("\u5B57\u6570: %1").arg(charCount));
+    ui->labelCharCount->setText(QStringLiteral("字数: %1").arg(text.size()));
 }
 
-void Dialog::on_radioButtonXiaoxiao_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, XiaoxiaoNeural";
-    }
-}
-
-
-void Dialog::on_radioButtonXiaoyi_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, XiaoyiNeural";
-    }
-}
-
-
-void Dialog::on_radioButtonYunjian_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, YunjianNeural";
-    }
-}
-
-
-void Dialog::on_radioButtonYunxi_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, YunxiNeural";
-    }
-}
-
-
-void Dialog::on_radioButtonYunxia_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, YunxiaNeural";
-    }
-}
-
-
-void Dialog::on_radioButtonYunyang_clicked(bool checked)
-{
-    if (checked) {
-        voice = "zh-CN, YunyangNeural";
-    }
-}
+void Dialog::on_radioButtonXiaoxiao_clicked(bool checked) { if (checked) voice = "zh-CN, XiaoxiaoNeural"; }
+void Dialog::on_radioButtonXiaoyi_clicked(bool checked) { if (checked) voice = "zh-CN, XiaoyiNeural"; }
+void Dialog::on_radioButtonYunjian_clicked(bool checked) { if (checked) voice = "zh-CN, YunjianNeural"; }
+void Dialog::on_radioButtonYunxi_clicked(bool checked) { if (checked) voice = "zh-CN, YunxiNeural"; }
+void Dialog::on_radioButtonYunxia_clicked(bool checked) { if (checked) voice = "zh-CN, YunxiaNeural"; }
+void Dialog::on_radioButtonYunyang_clicked(bool checked) { if (checked) voice = "zh-CN, YunyangNeural"; }
 
 void Dialog::loadVoiceData()
 {
     QFile file(":/voice_list.tsv");
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-    {
-        qDebug() << "Cannot open file!";
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        qWarning() << "Cannot open voice list";
         return;
     }
 
     QTextStream in(&file);
-
-    while (!in.atEnd())
-    {
-        QString line = in.readLine();
-        QStringList fields = line.split('\t');
-
-        if (fields.size() >= 3)
-        {
-            QString language = fields[0];
-            QString voiceName = fields[1];
-            QString code = fields[2];
-
-            data[language][voiceName] = code;
+    while (!in.atEnd()) {
+        const QStringList fields = in.readLine().split('\t');
+        if (fields.size() >= 3) {
+            data[fields[0]][fields[1]] = fields[2];
         }
     }
 
-    // 填充语言的ComboBox
     ui->comboBoxLanguage->addItems(data.keys());
-
-    // 设置初始的语言
-    if (!data.isEmpty())
-    {
-        QString initialLanguage = data.keys().first();
+    if (!data.isEmpty()) {
+        const QString initialLanguage = data.keys().first();
         ui->comboBoxLanguage->setCurrentText(initialLanguage);
         onLanguageChanged(initialLanguage);
     }
 }
 
-void Dialog::onLanguageChanged(const QString &language)
+void Dialog::onLanguageChanged(const QString &languageName)
 {
-    // 清空语音名的ComboBox
     ui->comboBoxVoiceName->clear();
-
-    // 获取当前语言的语音名列表
-    QMap<QString, QString> voiceMap = data.value(language);
-
-    if (!voiceMap.isEmpty())
-    {
-        ui->comboBoxVoiceName->addItems(voiceMap.keys());
-
-        // 设置初始的语音名称
-        QString initialVoiceName = voiceMap.keys().first();
-        ui->comboBoxVoiceName->setCurrentText(initialVoiceName);
-        onVoiceNameChanged(initialVoiceName);
+    const QMap<QString, QString> voiceMap = data.value(languageName);
+    if (voiceMap.isEmpty()) {
+        return;
     }
+
+    ui->comboBoxVoiceName->addItems(voiceMap.keys());
+    const QString initialVoiceName = voiceMap.keys().first();
+    ui->comboBoxVoiceName->setCurrentText(initialVoiceName);
+    onVoiceNameChanged(initialVoiceName);
 }
 
 void Dialog::onVoiceNameChanged(const QString &voiceName)
 {
-    QString language = ui->comboBoxLanguage->currentText();
-    QString code = data.value(language).value(voiceName);
-
-    voice = code;
+    const QString code = data.value(ui->comboBoxLanguage->currentText()).value(voiceName);
+    if (!code.isEmpty()) {
+        voice = code;
+    }
 }
