@@ -1,7 +1,10 @@
 #ifndef COMMUNICATE_H
 #define COMMUNICATE_H
 
+#include <utility>
+
 #include <QBuffer>
+#include <QIcon>
 #include <QMap>
 #include <QQueue>
 #include <QTimer>
