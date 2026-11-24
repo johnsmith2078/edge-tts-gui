@@ -72,6 +72,7 @@ Communicate::Communicate(QObject *parent)
         }
         m_playbackErrorOccurred = true;
         m_switchingPlaybackSource = false;
+        m_playbackChunkActive = false;
         qDebug() << "Media player error:" << errorString;
         notifyFinishedOnce();
     });
@@ -81,32 +82,13 @@ Communicate::Communicate(QObject *parent)
             return;
         }
 
-        if (m_switchingPlaybackSource) {
-            // Ignore transient EndOfMedia fired while we are replacing the source.
+        if (m_switchingPlaybackSource || !m_playbackChunkActive) {
+            // Source replacement can emit a transient EndOfMedia.
             return;
         }
 
-        if (!m_fileName.isEmpty()) {
-            return;
-        }
-
-        if (m_stopRequested || m_playbackErrorOccurred) {
-            notifyFinishedOnce();
-            return;
-        }
-
-        if (!m_readyPlaybackChunks.isEmpty()) {
-            // Continue with next fully-synthesized segment.
-            tryStartOrContinuePlayback();
-            return;
-        }
-
-        if (!m_synthesisComplete) {
-            // Producer has not completed current/next segment yet. Wait silently.
-            return;
-        }
-
-        notifyFinishedOnce();
+        m_playbackChunkActive = false;
+        tryStartOrContinuePlayback();
     });
 
     // connect this->stop() to player->stop() and emit finished()
@@ -114,6 +96,7 @@ Communicate::Communicate(QObject *parent)
 
     QObject::connect(this, &Communicate::stop, this, [this]() {
         m_switchingPlaybackSource = false;
+        m_playbackChunkActive = false;
         notifyFinishedOnce();
     });
 }
@@ -172,6 +155,7 @@ bool Communicate::hasPlaybackError() const
 
 
 void Communicate::start() {
+    m_playbackChunkActive = false;
     m_player->stop();
     m_player->setSource(QUrl());
     m_audioBuffer.close();
@@ -387,7 +371,9 @@ void Communicate::tryStartOrContinuePlayback()
         return;
     }
 
-    if (m_player->playbackState() == QMediaPlayer::PlayingState) {
+    // Qt loads a source asynchronously: StoppedState does not mean that the
+    // buffer is free to replace. Keep the chunk until EndOfMedia or failure.
+    if (m_playbackChunkActive) {
         return;
     }
 
@@ -407,14 +393,17 @@ void Communicate::tryStartOrContinuePlayback()
     }
 
     m_playStarted = true;
+    m_playbackChunkActive = true;
     m_switchingPlaybackSource = true;
     m_player->setSource(QUrl());
     m_audioBuffer.close();
     m_audioBuffer.setData(nextChunk);
     m_audioBuffer.open(QIODevice::ReadOnly);
     m_player->setSourceDevice(&m_audioBuffer, QUrl("audio.mp3"));
-    m_player->play();
     m_switchingPlaybackSource = false;
+    if (m_playbackChunkActive && !m_playbackErrorOccurred) {
+        m_player->play();
+    }
 }
 
 void Communicate::onDisconnected() {

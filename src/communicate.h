@@ -102,6 +102,7 @@ private:
     qsizetype m_audioOffset = 0;
     bool m_finishedEmitted = false;
     bool m_switchingPlaybackSource = false;
+    bool m_playbackChunkActive = false;
     QByteArray m_currentTurnAudio;
     QQueue<QByteArray> m_readyPlaybackChunks;
     QVector<QString> m_textParts;
