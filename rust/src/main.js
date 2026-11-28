@@ -113,7 +113,13 @@ function playNextChunk(jid) {
       setProgress(null);
     }
   };
-  audio.play();
+  audio.play().catch(() => {
+    if (jid === playbackJobId) {
+      stopAudio();
+      setBusy(false, "播放失败");
+      setProgress(null);
+    }
+  });
   setBusy(true, "播放中");
   stopButton.disabled = false;
 }
