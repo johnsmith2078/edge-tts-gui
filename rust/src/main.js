@@ -10,6 +10,7 @@ const statusText = document.querySelector("#status");
 const language = document.querySelector("#language");
 const voice = document.querySelector("#voice");
 const progress = document.querySelector("#progress");
+const progressFill = progress.querySelector(".progress-fill");
 const playButton = document.querySelector("#play");
 const stopButton = document.querySelector("#stop");
 const saveButton = document.querySelector("#save");
@@ -37,8 +38,11 @@ function setBusy(busy, label = "就绪") {
 }
 
 function setProgress(value) {
-  progress.hidden = value == null;
-  progress.value = value || 0;
+  const hidden = value == null;
+  progress.hidden = hidden;
+  const clamped = hidden ? 0 : Math.max(0, Math.min(100, Number(value) || 0));
+  progress.setAttribute("aria-valuenow", String(Math.round(clamped)));
+  progressFill.style.width = `${clamped}%`;
 }
 
 function activeVoiceCode() {
