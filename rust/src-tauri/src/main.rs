@@ -92,13 +92,15 @@ fn ensure_ocr_extracted() -> Result<(), String> {
 fn perform_ocr(image_bytes: &[u8], width: u32, height: u32) -> Result<String, String> {
     ensure_ocr_extracted()?;
     let dir = ocr_dir();
-    let image_path = dir.join(format!("_ocr_input_{}.png", uuid::Uuid::new_v4().simple()));
+    let stem = format!("_ocr_input_{}", uuid::Uuid::new_v4().simple());
+    let image_path = dir.join(format!("{stem}.png"));
     image::save_buffer(&image_path, image_bytes, width, height, image::ColorType::Rgba8)
         .map_err(|e| format!("save image: {e}"))?;
 
     let exe = dir.join("win-BIN-CPU-x64").join("RapidOcrOnnx.exe");
     let models = dir.join("models");
     let mut cmd = Command::new(&exe);
+    cmd.current_dir(dir);
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -111,10 +113,10 @@ fn perform_ocr(image_bytes: &[u8], width: u32, height: u32) -> Result<String, St
         .arg("--rec").arg("ch_PP-OCRv4_rec_infer.onnx")
         .arg("--keys").arg("ppocr_keys_v1.txt")
         .arg("--image").arg(&image_path)
-        .output()
-        .map_err(|e| format!("run OCR: {e}"))?;
+        .output();
 
-    let _ = std::fs::remove_file(&image_path);
+    cleanup_ocr_artifacts(dir, &stem);
+    let output = output.map_err(|e| format!("run OCR: {e}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(format!("OCR exited: {}", stderr.trim()));
@@ -130,15 +132,9 @@ fn perform_ocr(image_bytes: &[u8], width: u32, height: u32) -> Result<String, St
     Ok(raw)
 }
 
-fn cleanup_ocr_results() {
-    if let Ok(entries) = std::fs::read_dir(".") {
-        for entry in entries.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            if name.ends_with("-result.jpg") || name.ends_with("-result.txt") {
-                let _ = std::fs::remove_file(entry.path());
-            }
-        }
+fn cleanup_ocr_artifacts(dir: &Path, stem: &str) {
+    for suffix in [".png", "-result.jpg", "-result.txt"] {
+        let _ = std::fs::remove_file(dir.join(format!("{stem}{suffix}")));
     }
 }
 
@@ -778,7 +774,6 @@ fn read_selected_text(app: tauri::AppHandle) {
                 }
                 Err(e) => eprintln!("OCR failed: {e}"),
             }
-            cleanup_ocr_results();
         }
     });
 }
@@ -911,6 +906,29 @@ mod tests {
         assert!(!MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
         set_middle_mouse_enabled(true);
         assert!(MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn cleanup_ocr_artifacts_only_removes_current_run_files() {
+        let dir = std::env::temp_dir().join(format!("edge-tts-ocr-clean-{}", Uuid::new_v4().simple()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let stem = "_ocr_input_abc";
+        for suffix in [".png", "-result.jpg", "-result.txt"] {
+            std::fs::write(dir.join(format!("{stem}{suffix}")), b"tmp").unwrap();
+        }
+        let user_jpg = dir.join("user-result.jpg");
+        let user_txt = dir.join("user-result.txt");
+        std::fs::write(&user_jpg, b"keep").unwrap();
+        std::fs::write(&user_txt, b"keep").unwrap();
+
+        cleanup_ocr_artifacts(&dir, stem);
+
+        for suffix in [".png", "-result.jpg", "-result.txt"] {
+            assert!(!dir.join(format!("{stem}{suffix}")).exists());
+        }
+        assert!(user_jpg.exists());
+        assert!(user_txt.exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
