@@ -283,10 +283,6 @@ listen("playback-done", (event) => {
   if (event.payload.job_id !== playbackJobId) return;
   synthesisDone = true;
   setProgress(null);
-  if (event.payload.stopped) {
-    setBusy(false, "已停止");
-    return;
-  }
   if (audioQueue.length === 0 && !audio) {
     setBusy(false, "播放完成");
   }

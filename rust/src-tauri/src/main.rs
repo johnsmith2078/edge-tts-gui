@@ -179,14 +179,11 @@ struct ProgressPayload {
 struct PlaybackChunkPayload {
     job_id: u64,
     audio_base64: String,
-    chunk_index: usize,
-    total_chunks: usize,
 }
 
 #[derive(Clone, Serialize)]
 struct PlaybackDonePayload {
     job_id: u64,
-    stopped: bool,
 }
 
 #[tauri::command]
@@ -219,17 +216,6 @@ fn stop(state: State<'_, AppState>) {
 #[tauri::command]
 fn set_middle_mouse_enabled(enabled: bool) {
     MIDDLE_MOUSE_ENABLED.store(enabled, Ordering::Relaxed);
-}
-
-#[tauri::command]
-async fn synthesize_text(
-    state: State<'_, AppState>,
-    text: String,
-    voice: String,
-    job_id: u64,
-) -> Result<Vec<u8>, String> {
-    state.current_job.store(job_id, Ordering::SeqCst);
-    synthesize(&text, &voice, job_id, &state, None).await
 }
 
 #[tauri::command]
@@ -401,16 +387,12 @@ async fn synthesize_streaming(
                         app.emit("playback-chunk", PlaybackChunkPayload {
                             job_id,
                             audio_base64: b64,
-                            chunk_index: index,
-                            total_chunks: total,
                         }).map_err(to_string)?;
                         current_chunk.clear();
                         index += 1;
                         emit_progress(Some(app), job_id, full_progress(index, total));
                         if index == total {
-                            return app.emit("playback-done", PlaybackDonePayload {
-                                job_id, stopped: false,
-                            }).map_err(to_string);
+                            return app.emit("playback-done", PlaybackDonePayload { job_id }).map_err(to_string);
                         }
                         send_text_part(&mut write, &parts[index], voice).await?;
                     }
@@ -859,7 +841,6 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             get_voices,
-            synthesize_text,
             synthesize_stream,
             save_audio,
             stop,
