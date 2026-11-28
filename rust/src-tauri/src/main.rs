@@ -783,6 +783,16 @@ fn simulate_ctrl_c() {
 #[cfg(not(target_os = "windows"))]
 fn simulate_ctrl_c() {}
 
+fn clean_readout_text(raw: &str) -> String {
+    raw.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn read_selected_text(app: tauri::AppHandle) {
     thread::spawn(move || {
         let image_before = arboard::Clipboard::new()
@@ -795,10 +805,8 @@ fn read_selected_text(app: tauri::AppHandle) {
         let text = arboard::Clipboard::new()
             .ok()
             .and_then(|mut c| c.get_text().ok())
-            .unwrap_or_default()
-            .replace(['\r', '\n'], "")
-            .trim()
-            .to_string();
+            .map(|raw| clean_readout_text(&raw))
+            .unwrap_or_default();
 
         if !text.is_empty() {
             let _ = app.emit("hotkey-text", text);
@@ -808,7 +816,7 @@ fn read_selected_text(app: tauri::AppHandle) {
         if let Some(img) = image_before {
             match perform_ocr(&img.bytes, img.width as u32, img.height as u32) {
                 Ok(ocr_text) => {
-                    let cleaned = ocr_text.replace(['\r', '\n'], "").trim().to_string();
+                    let cleaned = clean_readout_text(&ocr_text);
                     if !cleaned.is_empty() {
                         let _ = app.emit("hotkey-text", cleaned);
                     }
@@ -946,6 +954,12 @@ mod tests {
         assert!(!MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
         set_middle_mouse_enabled(true);
         assert!(MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn clean_readout_text_preserves_line_breaks_without_fusing_words() {
+        assert_eq!(clean_readout_text("  Hello \r\n\n world  "), "Hello\nworld");
+        assert_eq!(clean_readout_text("第一行\n\r\n第二行"), "第一行\n第二行");
     }
 
     #[test]
