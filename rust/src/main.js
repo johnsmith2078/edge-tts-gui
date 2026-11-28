@@ -15,7 +15,10 @@ const playButton = document.querySelector("#play");
 const stopButton = document.querySelector("#stop");
 const saveButton = document.querySelector("#save");
 const closeButton = document.querySelector("#close");
+const middleMouseToggle = document.querySelector("#middle-mouse-toggle");
 const presets = [...document.querySelectorAll(".preset")];
+
+const MIDDLE_MOUSE_STORAGE_KEY = "middleMouseReadoutEnabled";
 
 let voices = [];
 let audio = null;
@@ -232,6 +235,11 @@ playButton.addEventListener("click", () => playText());
 stopButton.addEventListener("click", stopAll);
 saveButton.addEventListener("click", saveText);
 closeButton.addEventListener("click", () => invoke("close_window"));
+middleMouseToggle.addEventListener("change", async () => {
+  const enabled = middleMouseToggle.checked;
+  localStorage.setItem(MIDDLE_MOUSE_STORAGE_KEY, String(enabled));
+  await invoke("set_middle_mouse_enabled", { enabled });
+});
 
 listen("hotkey-text", (event) => playText(event.payload));
 listen("save-progress", (event) => {
@@ -254,6 +262,11 @@ listen("playback-done", (event) => {
     setBusy(false, "播放完成");
   }
 });
+
+const savedMiddleMouse = localStorage.getItem(MIDDLE_MOUSE_STORAGE_KEY);
+const middleMouseEnabled = savedMiddleMouse === null ? true : savedMiddleMouse === "true";
+middleMouseToggle.checked = middleMouseEnabled;
+await invoke("set_middle_mouse_enabled", { enabled: middleMouseEnabled });
 
 voices = await invoke("get_voices");
 fillLanguageSelect();

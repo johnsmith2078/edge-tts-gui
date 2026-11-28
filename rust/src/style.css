@@ -163,14 +163,14 @@ legend {
   align-items: center;
 }
 
-label {
+.selects label {
   display: grid;
   gap: 6px;
   color: var(--meta);
   font-size: 13px;
 }
 
-label span {
+.selects label span {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -243,7 +243,10 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .progress-fill {
+  .progress-fill,
+  .toggle-track,
+  .toggle-thumb,
+  .toggle-label {
     transition: none;
   }
   .progress-fill::after {
@@ -256,8 +259,71 @@ select {
   position: absolute;
   left: 20px;
   top: 510px;
+  width: 700px;
   display: flex;
+  align-items: center;
   gap: 30px;
+}
+
+.toggle {
+  margin-left: auto;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  color: var(--meta);
+  font-size: 14px;
+  user-select: none;
+  cursor: pointer;
+}
+
+.toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.toggle-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.25);
+  transform: translateX(3px);
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.toggle input:checked + .toggle-track {
+  background: var(--focus);
+}
+
+.toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(19px);
+}
+
+.toggle input:focus-visible + .toggle-track {
+  box-shadow: 0 0 0 3px var(--focus-shadow);
+}
+
+.toggle-label {
+  transition: color 160ms ease;
+}
+
+.toggle input:checked ~ .toggle-label {
+  color: var(--text);
 }
 
 button {

@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Once, OnceLock,
     },
     thread,
@@ -42,6 +42,7 @@ static TLS_INIT: Once = Once::new();
 
 #[cfg(target_os = "windows")]
 static MIDDLE_MOUSE_APP: OnceLock<tauri::AppHandle> = OnceLock::new();
+static MIDDLE_MOUSE_ENABLED: AtomicBool = AtomicBool::new(true);
 
 // ── OCR resources ────────────────────────────────────────────────
 struct OcrResource {
@@ -198,6 +199,11 @@ fn close_window(app: tauri::AppHandle) {
 #[tauri::command]
 fn stop(state: State<'_, AppState>) {
     state.current_job.fetch_add(1, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn set_middle_mouse_enabled(enabled: bool) {
+    MIDDLE_MOUSE_ENABLED.store(enabled, Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -785,7 +791,10 @@ unsafe extern "system" fn middle_mouse_proc(
 ) -> windows::Win32::Foundation::LRESULT {
     use windows::Win32::UI::WindowsAndMessaging::{CallNextHookEx, WM_MBUTTONDOWN};
 
-    if n_code >= 0 && w_param.0 == WM_MBUTTONDOWN as usize {
+    if n_code >= 0
+        && w_param.0 == WM_MBUTTONDOWN as usize
+        && MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed)
+    {
         if let Some(app) = MIDDLE_MOUSE_APP.get() {
             read_selected_text(app.clone());
         }
@@ -834,7 +843,15 @@ fn main() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_voices, synthesize_text, synthesize_stream, save_audio, stop, close_window])
+        .invoke_handler(tauri::generate_handler![
+            get_voices,
+            synthesize_text,
+            synthesize_stream,
+            save_audio,
+            stop,
+            close_window,
+            set_middle_mouse_enabled
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -886,6 +903,14 @@ mod tests {
         let text = "a".repeat(MAX_TEXT_BYTES + 8);
         let parts = split_text_by_byte_length(&text, MAX_TEXT_BYTES);
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn middle_mouse_toggle_updates_flag() {
+        set_middle_mouse_enabled(false);
+        assert!(!MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
+        set_middle_mouse_enabled(true);
+        assert!(MIDDLE_MOUSE_ENABLED.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
