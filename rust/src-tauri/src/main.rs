@@ -516,9 +516,14 @@ fn parse_headers(message: &str) -> std::collections::HashMap<String, String> {
         .collect()
 }
 
+fn escape_xml_attr(text: &str) -> String {
+    escape_xml(text).replace('\'', "&apos;").replace('"', "&quot;")
+}
+
 fn mkssml(text: &str, voice: &str) -> String {
+    let safe_voice = escape_xml_attr(voice);
     format!(
-        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='Microsoft Server Speech Text to Speech Voice ({voice})'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>{text}</prosody></voice></speak>"
+        "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='Microsoft Server Speech Text to Speech Voice ({safe_voice})'><prosody pitch='+0Hz' rate='+0%' volume='+0%'>{text}</prosody></voice></speak>"
     )
 }
 
@@ -946,6 +951,12 @@ mod tests {
         let text = "a".repeat(MAX_TEXT_BYTES + 8);
         let parts = split_text_by_byte_length(&text, MAX_TEXT_BYTES);
         assert_eq!(parts.len(), 2);
+    }
+
+    #[test]
+    fn mkssml_escapes_voice_attribute() {
+        let ssml = mkssml("hello", "zh-CN, Xiaoyi'&<\"Neural");
+        assert!(ssml.contains("Xiaoyi&apos;&amp;&lt;&quot;Neural"));
     }
 
     #[test]
