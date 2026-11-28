@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Mutex, Once, OnceLock,
     },
     thread,
@@ -37,6 +37,8 @@ const CHROMIUM_MAJOR_VERSION: &str = "143";
 const MAX_TEXT_BYTES: usize = 4096;
 const INITIAL_TEXT_BYTES: usize = 80;
 const TARGET_TEXT_BYTES: usize = 780;
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+const READ_TIMEOUT: Duration = Duration::from_secs(30);
 const VOICE_LIST: &str = include_str!("../voice_list.tsv");
 static TLS_INIT: Once = Once::new();
 
@@ -157,9 +159,31 @@ fn cleanup_ocr_artifacts(dir: &Path, stem: &str) {
     }
 }
 
-#[derive(Default)]
 struct AppState {
-    current_job: AtomicU64,
+    job_tx: tokio::sync::watch::Sender<u64>,
+}
+
+impl Default for AppState {
+    fn default() -> Self {
+        let (job_tx, _) = tokio::sync::watch::channel(0);
+        Self { job_tx }
+    }
+}
+
+impl AppState {
+    fn start_job(&self, job_id: u64) -> tokio::sync::watch::Receiver<u64> {
+        self.job_tx.send_replace(job_id);
+        self.job_tx.subscribe()
+    }
+
+    fn subscribe(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.job_tx.subscribe()
+    }
+
+    fn cancel_current(&self) {
+        let next = (*self.job_tx.borrow()).wrapping_add(1);
+        let _ = self.job_tx.send(next);
+    }
 }
 
 #[derive(Serialize)]
@@ -210,7 +234,7 @@ fn close_window(app: tauri::AppHandle) {
 
 #[tauri::command]
 fn stop(state: State<'_, AppState>) {
-    state.current_job.fetch_add(1, Ordering::SeqCst);
+    state.cancel_current();
 }
 
 #[tauri::command]
@@ -226,7 +250,7 @@ async fn synthesize_stream(
     voice: String,
     job_id: u64,
 ) -> Result<(), String> {
-    state.current_job.store(job_id, Ordering::SeqCst);
+    let _ = state.start_job(job_id);
     synthesize_streaming(&text, &voice, job_id, &app).await
 }
 
@@ -238,7 +262,7 @@ async fn save_audio(
     voice: String,
     job_id: u64,
 ) -> Result<Option<String>, String> {
-    state.current_job.store(job_id, Ordering::SeqCst);
+    let _ = state.start_job(job_id);
 
     let Some(file) = rfd::AsyncFileDialog::new()
         .add_filter("MP3 audio", &["mp3"])
@@ -262,6 +286,23 @@ async fn save_audio(
     Ok(Some(path.display().to_string()))
 }
 
+async fn run_cancellable<T, F>(
+    rx: &mut tokio::sync::watch::Receiver<u64>,
+    job_id: u64,
+    limit: Duration,
+    timeout_msg: &str,
+    fut: F,
+) -> Result<T, String>
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::select! {
+        biased;
+        _ = rx.wait_for(|&cur| cur != job_id) => Err("已停止".into()),
+        res = tokio::time::timeout(limit, fut) => res.map_err(|_| timeout_msg.to_string()),
+    }
+}
+
 async fn synthesize_parts<F>(
     parts: &[String],
     voice: &str,
@@ -274,22 +315,49 @@ where
     F: FnMut(&[u8]) -> Result<(), String>,
 {
     init_tls();
-    ensure_current(state, job_id)?;
+    let mut rx = state.subscribe();
+    if *rx.borrow() != job_id {
+        return Err("已停止".into());
+    }
     if parts.is_empty() {
         return Err("文本为空".into());
     }
 
-    let socket = connect_tts_socket().await?;
+    let socket = run_cancellable(
+        &mut rx,
+        job_id,
+        CONNECT_TIMEOUT,
+        "连接语音服务超时",
+        connect_tts_socket(),
+    )
+    .await??;
     let (mut write, mut read) = socket.split();
 
     let mut current_chunk = Vec::new();
     let mut index = 0usize;
     let mut downloading = false;
-    send_text_part(&mut write, &parts[index], voice).await?;
+    run_cancellable(
+        &mut rx,
+        job_id,
+        READ_TIMEOUT,
+        "发送语音请求超时",
+        send_text_part(&mut write, &parts[index], voice),
+    )
+    .await??;
     emit_progress(app, job_id, 1);
 
-    while let Some(message) = read.next().await {
-        ensure_current(state, job_id)?;
+    while let Some(message) = run_cancellable(
+        &mut rx,
+        job_id,
+        READ_TIMEOUT,
+        "接收语音数据超时",
+        read.next(),
+    )
+    .await?
+    {
+        if *rx.borrow() != job_id {
+            return Err("已停止".into());
+        }
         match message.map_err(to_string)? {
             Message::Binary(message) => {
                 if !downloading {
@@ -317,7 +385,14 @@ where
                         if index >= parts.len() {
                             break;
                         }
-                        send_text_part(&mut write, &parts[index], voice).await?;
+                        run_cancellable(
+                            &mut rx,
+                            job_id,
+                            READ_TIMEOUT,
+                            "发送语音请求超时",
+                            send_text_part(&mut write, &parts[index], voice),
+                        )
+                        .await??;
                     }
                     Some("audio.metadata" | "response") => {}
                     _ => return Err(format!("无法识别服务响应: {message}")),
@@ -674,14 +749,6 @@ fn emit_progress(app: Option<&tauri::AppHandle>, job_id: u64, percent: u8) {
     }
 }
 
-fn ensure_current(state: &AppState, job_id: u64) -> Result<(), String> {
-    if state.current_job.load(Ordering::SeqCst) == job_id {
-        Ok(())
-    } else {
-        Err("已停止".into())
-    }
-}
-
 fn to_string(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
@@ -932,10 +999,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn run_cancellable_aborts_when_job_stopped() {
+        let state = AppState::default();
+        let mut rx = state.start_job(7);
+        let cancel_task = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            state.cancel_current();
+        });
+        let err = run_cancellable(
+            &mut rx,
+            7,
+            Duration::from_secs(5),
+            "超时",
+            tokio::time::sleep(Duration::from_secs(5)),
+        )
+        .await
+        .unwrap_err();
+        cancel_task.await.unwrap();
+        assert_eq!(err, "已停止");
+    }
+
+    #[tokio::test]
+    async fn run_cancellable_returns_timeout_error() {
+        let state = AppState::default();
+        let mut rx = state.start_job(3);
+        let err = run_cancellable(
+            &mut rx,
+            3,
+            Duration::from_millis(15),
+            "操作超时",
+            tokio::time::sleep(Duration::from_secs(5)),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err, "操作超时");
+    }
+
+    #[tokio::test]
     #[ignore]
     async fn live_synthesis_smoke() {
         let state = AppState::default();
-        state.current_job.store(1, Ordering::SeqCst);
+        let _ = state.start_job(1);
         let audio = synthesize("测试", "zh-CN, XiaoyiNeural", 1, &state, None).await.unwrap();
         println!("single chunk audio bytes: {}", audio.len());
         assert!(audio.len() > 1024);
