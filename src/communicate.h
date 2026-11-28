@@ -12,6 +12,7 @@
 #include <QtMultimedia/QMediaPlayer>
 #include <QtMultimedia/QAudioOutput>
 #include <QBuffer>
+#include <QNetworkAccessManager>
 #include <QQueue>
 #include <QVector>
 
@@ -61,6 +62,8 @@ private slots:
 
     void onDisconnected();
 
+    void onSocketError(QAbstractSocket::SocketError error);
+
     void sendNextTextPart();
 
 signals:
@@ -102,6 +105,9 @@ private:
     qsizetype m_audioOffset = 0;
     bool m_finishedEmitted = false;
     bool m_switchingPlaybackSource = false;
+    bool m_retryingAfterClockSkew = false;
+    bool m_clockSkewRetried = false;
+    QNetworkAccessManager *m_networkManager = nullptr;
     QByteArray m_currentTurnAudio;
     QQueue<QByteArray> m_readyPlaybackChunks;
     QVector<QString> m_textParts;
@@ -145,6 +151,8 @@ private:
     void notifyFinishedOnce();
 
     void tryStartOrContinuePlayback();
+
+    void openWebSocket();
 };
 
 #endif // COMMUNICATE_H

@@ -162,6 +162,7 @@ async function playText(text = content.value) {
     });
   } catch (error) {
     if (currentJob === jobId) {
+      stopAudio();
       setBusy(false, String(error));
       setProgress(null);
     }

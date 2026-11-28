@@ -8,21 +8,25 @@ use std::{
         Once, OnceLock,
     },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
+
+mod drm;
 
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use tauri::{Emitter, Manager, State};
+use tokio::net::TcpStream;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{
         client::IntoClientRequest,
-        http::HeaderValue,
+        http::{HeaderValue, StatusCode},
+        Error as WsError,
         Message,
     },
+    MaybeTlsStream, WebSocketStream,
 };
 use uuid::Uuid;
 
@@ -216,11 +220,7 @@ async fn synthesize_stream(
     job_id: u64,
 ) -> Result<(), String> {
     state.current_job.store(job_id, Ordering::SeqCst);
-    let app = app.clone();
-    tokio::spawn(async move {
-        let _ = synthesize_streaming(&text, &voice, job_id, &app).await;
-    });
-    Ok(())
+    synthesize_streaming(&text, &voice, job_id, &app).await
 }
 
 #[tauri::command]
@@ -275,29 +275,11 @@ async fn synthesize(
         return Err("文本为空".into());
     }
 
-    let url = format!(
-        "{WSS_URL}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}&ConnectionId={}",
-        generate_sec_ms_gec_token()?,
-        generate_sec_ms_gec_version(),
-        connect_id()
-    );
-    let mut request = url.into_client_request().map_err(to_string)?;
-    let headers = request.headers_mut();
-    headers.insert("Pragma", HeaderValue::from_static("no-cache"));
-    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
-    headers.insert(
-        "Origin",
-        HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"),
-    );
-    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br, zstd"));
-    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
-    headers.insert("User-Agent", HeaderValue::from_str(&user_agent()).map_err(to_string)?);
-    headers.insert("Cookie", HeaderValue::from_str(&format!("muid={};", generate_muid())).map_err(to_string)?);
-
-    let (socket, _) = connect_async(request).await.map_err(|err| format!("连接失败: {err}"))?;
+    let socket = connect_tts_socket().await?;
     let (mut write, mut read) = socket.split();
 
     let mut audio = Vec::with_capacity(text.len().max(1024) * 128);
+    let mut part_start = 0;
     let mut index = 0usize;
     let mut downloading = false;
     send_text_part(&mut write, &parts[index], voice).await?;
@@ -321,6 +303,10 @@ async fn synthesize(
                 match headers.get("Path").map(String::as_str) {
                     Some("turn.start") => downloading = true,
                     Some("turn.end") => {
+                        if audio.len() == part_start {
+                            return Err("未收到音频数据".into());
+                        }
+                        part_start = audio.len();
                         downloading = false;
                         index += 1;
                         emit_progress(app, job_id, full_progress(index, parts.len()));
@@ -338,9 +324,8 @@ async fn synthesize(
         }
     }
 
-    trim_trailing_zeros(&mut audio);
-    if audio.is_empty() {
-        return Err("未收到音频数据".into());
+    if index < parts.len() {
+        return Err("语音服务在合成完成前断开了连接".into());
     }
     emit_progress(app, job_id, 100);
     Ok(audio)
@@ -364,23 +349,7 @@ async fn synthesize_streaming(
     }
     let total = parts.len();
 
-    let url = format!(
-        "{WSS_URL}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}&ConnectionId={}",
-        generate_sec_ms_gec_token()?,
-        generate_sec_ms_gec_version(),
-        connect_id()
-    );
-    let mut request = url.into_client_request().map_err(to_string)?;
-    let headers = request.headers_mut();
-    headers.insert("Pragma", HeaderValue::from_static("no-cache"));
-    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
-    headers.insert("Origin", HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"));
-    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br, zstd"));
-    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
-    headers.insert("User-Agent", HeaderValue::from_str(&user_agent()).map_err(to_string)?);
-    headers.insert("Cookie", HeaderValue::from_str(&format!("muid={};", generate_muid())).map_err(to_string)?);
-
-    let (socket, _) = connect_async(request).await.map_err(|err| format!("连接失败: {err}"))?;
+    let socket = connect_tts_socket().await?;
     let (mut write, mut read) = socket.split();
 
     let mut current_chunk = Vec::new();
@@ -389,70 +358,50 @@ async fn synthesize_streaming(
     send_text_part(&mut write, &parts[index], voice).await?;
     let _ = app.emit("save-progress", ProgressPayload { job_id, percent: 1 });
 
-    let result: Result<(), String> = async {
-        while let Some(message) = read.next().await {
-            ensure_current(&state, job_id)?;
-            match message.map_err(to_string)? {
-                Message::Binary(message) => {
-                    if !downloading {
-                        return Err("收到意外音频数据".into());
-                    }
-                    let data = parse_audio_message(&message)?;
-                    if !data.is_empty() {
-                        current_chunk.extend_from_slice(data);
-                    }
+    while let Some(message) = read.next().await {
+        ensure_current(&state, job_id)?;
+        match message.map_err(to_string)? {
+            Message::Binary(message) => {
+                if !downloading {
+                    return Err("收到意外音频数据".into());
                 }
-                Message::Text(message) => {
-                    let headers = parse_headers(&message);
-                    match headers.get("Path").map(String::as_str) {
-                        Some("turn.start") => downloading = true,
-                        Some("turn.end") => {
-                            downloading = false;
-                            trim_trailing_zeros(&mut current_chunk);
-                            if !current_chunk.is_empty() {
-                                let b64 = base64::engine::general_purpose::STANDARD.encode(&current_chunk);
-                                let _ = app.emit("playback-chunk", PlaybackChunkPayload {
-                                    job_id,
-                                    audio_base64: b64,
-                                    chunk_index: index,
-                                    total_chunks: total,
-                                });
-                                current_chunk.clear();
-                            }
-                            index += 1;
-                            let _ = app.emit("save-progress", ProgressPayload {
-                                job_id,
-                                percent: full_progress(index, total),
-                            });
-                            if index >= parts.len() {
-                                break;
-                            }
-                            send_text_part(&mut write, &parts[index], voice).await?;
+                current_chunk.extend_from_slice(parse_audio_message(&message)?);
+            }
+            Message::Text(message) => {
+                let headers = parse_headers(&message);
+                match headers.get("Path").map(String::as_str) {
+                    Some("turn.start") => downloading = true,
+                    Some("turn.end") => {
+                        if current_chunk.is_empty() {
+                            return Err("未收到音频数据".into());
                         }
-                        Some("audio.metadata" | "response") => {}
-                        _ => return Err(format!("无法识别服务响应: {message}")),
+                        downloading = false;
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&current_chunk);
+                        app.emit("playback-chunk", PlaybackChunkPayload {
+                            job_id,
+                            audio_base64: b64,
+                            chunk_index: index,
+                            total_chunks: total,
+                        }).map_err(to_string)?;
+                        current_chunk.clear();
+                        index += 1;
+                        emit_progress(Some(app), job_id, full_progress(index, total));
+                        if index == total {
+                            return app.emit("playback-done", PlaybackDonePayload {
+                                job_id, stopped: false,
+                            }).map_err(to_string);
+                        }
+                        send_text_part(&mut write, &parts[index], voice).await?;
                     }
+                    Some("audio.metadata" | "response") => {}
+                    _ => return Err(format!("无法识别服务响应: {message}")),
                 }
-                Message::Close(_) => break,
-                _ => {}
             }
-        }
-        Ok(())
-    }.await;
-
-    match result {
-        Ok(()) => {
-            let _ = app.emit("playback-done", PlaybackDonePayload { job_id, stopped: false });
-        }
-        Err(e) => {
-            let stopped = e == "已停止";
-            let _ = app.emit("playback-done", PlaybackDonePayload { job_id, stopped });
-            if !stopped {
-                return Err(e);
-            }
+            Message::Close(_) => break,
+            _ => {}
         }
     }
-    Ok(())
+    Err("语音服务在合成完成前断开了连接".into())
 }
 
 async fn send_text_part<W>(write: &mut W, part: &str, voice: &str) -> Result<(), String>
@@ -491,7 +440,16 @@ fn parse_audio_message(message: &[u8]) -> Result<&[u8], String> {
     if message.len() < header_len + 2 {
         return Err("音频消息缺少数据".into());
     }
-    Ok(&message[header_len + 2..])
+    let headers = std::str::from_utf8(&message[2..header_len + 2]).map_err(to_string)?;
+    let headers = parse_headers(headers);
+    let payload = &message[header_len + 2..];
+    if headers.get("Path").map(String::as_str) != Some("audio") {
+        return Err("收到意外的二进制消息".into());
+    }
+    match (headers.get("Content-Type").map(String::as_str), payload.is_empty()) {
+        (Some("audio/mpeg"), false) | (None, true) => Ok(payload),
+        _ => Err("音频消息的类型与数据不匹配".into()),
+    }
 }
 
 fn parse_headers(message: &str) -> std::collections::HashMap<String, String> {
@@ -651,12 +609,6 @@ fn adjust_xml_entity(text: &[u8], split_at: usize) -> usize {
     adjusted
 }
 
-fn trim_trailing_zeros(bytes: &mut Vec<u8>) {
-    while bytes.last() == Some(&0) {
-        bytes.pop();
-    }
-}
-
 fn connect_id() -> String {
     Uuid::new_v4().simple().to_string()
 }
@@ -672,20 +624,60 @@ fn date_to_string() -> String {
 }
 
 fn generate_sec_ms_gec_token() -> Result<String, String> {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(to_string)?
-        .as_secs();
-    let mut ticks = (secs + 11_644_473_600) * 10_000_000;
-    ticks -= ticks % 3_000_000_000;
-
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{ticks}{TRUSTED_CLIENT_TOKEN}"));
-    Ok(hasher.finalize().iter().map(|byte| format!("{byte:02X}")).collect())
+    drm::generate_sec_ms_gec_v2(TRUSTED_CLIENT_TOKEN)
 }
 
 fn generate_sec_ms_gec_version() -> String {
-    format!("1-{CHROMIUM_FULL_VERSION}")
+    format!("2-{CHROMIUM_FULL_VERSION}")
+}
+
+fn build_tts_request() -> Result<tokio_tungstenite::tungstenite::http::Request<()>, String> {
+    let url = format!(
+        "{WSS_URL}&ConnectionId={}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}",
+        connect_id(),
+        generate_sec_ms_gec_token()?,
+        generate_sec_ms_gec_version(),
+    );
+    let mut request = url.into_client_request().map_err(to_string)?;
+    let headers = request.headers_mut();
+    headers.insert("Pragma", HeaderValue::from_static("no-cache"));
+    headers.insert("Cache-Control", HeaderValue::from_static("no-cache"));
+    headers.insert(
+        "Origin",
+        HeaderValue::from_static("chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold"),
+    );
+    headers.insert("Accept-Encoding", HeaderValue::from_static("gzip, deflate, br, zstd"));
+    headers.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
+    headers.insert("User-Agent", HeaderValue::from_str(&user_agent()).map_err(to_string)?);
+    headers.insert(
+        "Cookie",
+        HeaderValue::from_str(&format!("muid={};", generate_muid())).map_err(to_string)?,
+    );
+    Ok(request)
+}
+
+async fn connect_tts_socket() -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>, String> {
+    let request = build_tts_request()?;
+    match connect_async(request).await {
+        Ok((socket, _)) => Ok(socket),
+        Err(WsError::Http(response)) if response.status() == StatusCode::FORBIDDEN => {
+            if let Some(date) = response
+                .headers()
+                .get("date")
+                .and_then(|value| value.to_str().ok())
+            {
+                if drm::adjust_clock_skew_from_date(date).is_ok() {
+                    let retry_request = build_tts_request()?;
+                    return connect_async(retry_request)
+                        .await
+                        .map(|(socket, _)| socket)
+                        .map_err(|err| format!("连接失败: {err}"));
+                }
+            }
+            Err(format!("连接失败: HTTP error: {}", response.status()))
+        }
+        Err(err) => Err(format!("连接失败: {err}")),
+    }
 }
 
 fn user_agent() -> String {
@@ -851,6 +843,24 @@ fn main() {
 mod tests {
     use super::*;
 
+    fn audio_frame(headers: &str, payload: &[u8]) -> Vec<u8> {
+        let mut frame = (headers.len() as u16).to_be_bytes().to_vec();
+        frame.extend_from_slice(headers.as_bytes());
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    #[test]
+    fn audio_frames_require_mpeg_data_or_an_empty_end_marker() {
+        let payload = [0xff, 0xf3, 0, 0];
+        let headers = "Path:audio\r\nContent-Type:audio/mpeg\r\n";
+        assert_eq!(parse_audio_message(&audio_frame(headers, &payload)).unwrap(), payload);
+        assert_eq!(parse_audio_message(&audio_frame("Path:audio\r\n", &[])).unwrap(), &[] as &[u8]);
+        assert!(parse_audio_message(&audio_frame(headers, &[])).is_err());
+        assert!(parse_audio_message(&audio_frame("Path:audio\r\n", &payload)).is_err());
+        assert!(parse_audio_message(&audio_frame("Path:response\r\n", &[])).is_err());
+    }
+
     #[test]
     fn split_keeps_utf8_and_xml_entities_intact() {
         let text = escape_xml("你好 & <world>。再来一段很长很长的中文文本，用来触发切分。");
@@ -863,8 +873,12 @@ mod tests {
     #[test]
     fn token_shape_matches_edge_requirement() {
         let token = generate_sec_ms_gec_token().unwrap();
-        assert_eq!(token.len(), 64);
-        assert!(token.chars().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_lowercase()));
+        let (cs64, sha256) = token.split_once('-').expect("v2 token should contain '-'");
+        assert_eq!(cs64.len(), 16);
+        assert_eq!(sha256.len(), 64);
+        assert!(cs64.chars().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_lowercase()));
+        assert!(sha256.chars().all(|ch| ch.is_ascii_hexdigit() && !ch.is_ascii_lowercase()));
+        assert_eq!(generate_sec_ms_gec_version(), format!("2-{CHROMIUM_FULL_VERSION}"));
     }
 
     #[test]
@@ -880,6 +894,18 @@ mod tests {
         let state = AppState::default();
         state.current_job.store(1, Ordering::SeqCst);
         let audio = synthesize("测试", "zh-CN, XiaoyiNeural", 1, &state, None).await.unwrap();
+        println!("single chunk audio bytes: {}", audio.len());
         assert!(audio.len() > 1024);
+        assert_eq!(audio[0], 0xFF, "expected MP3 frame sync byte");
+        assert_eq!(audio[1] & 0xE0, 0xE0, "expected MP3 frame sync bits");
+
+        let long_text = "这是一段用于验证多分片流式合成的中文测试文本。第一句用来触发首片切分，第二句紧随其后验证同一连接下多轮合成是否正常返回完整的音频数据。";
+        let parts = split_text_for_playback(&escape_xml(long_text), INITIAL_TEXT_BYTES, TARGET_TEXT_BYTES);
+        assert!(parts.len() > 1, "expected multiple chunks, got {}", parts.len());
+        let multi_audio = synthesize(long_text, "zh-CN, XiaoyiNeural", 1, &state, None).await.unwrap();
+        println!("multi chunk ({} parts) audio bytes: {}", parts.len(), multi_audio.len());
+        assert!(multi_audio.len() > audio.len());
+        assert_eq!(multi_audio[0], 0xFF);
+        assert_eq!(multi_audio[1] & 0xE0, 0xE0);
     }
 }

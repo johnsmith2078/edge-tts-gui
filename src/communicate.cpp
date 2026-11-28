@@ -1,7 +1,9 @@
-#include <QCryptographicHash>
 #include <QDebug>
+#include <QLocale>
+#include <QNetworkReply>
 
 #include "communicate.h"
+#include "drm.h"
 
 // Constants
 const QString TRUSTED_CLIENT_TOKEN = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
@@ -18,24 +20,14 @@ const QString VOICE_LIST =
 const QString CHROMIUM_FULL_VERSION = "143.0.3650.75";
 const QString CHROMIUM_MAJOR_VERSION = CHROMIUM_FULL_VERSION.split(".", Qt::SkipEmptyParts).value(0);
 
-// 生成 Sec-MS-GEC Token
+// 生成 Sec-MS-GEC v2 Token
 QString Communicate::generateSecMsGecToken() {
-    // 获取当前时间戳并转换为 Windows 文件时间格式（1601年起，每 100 纳秒单位）
-    qint64 ticks = (QDateTime::currentDateTimeUtc().toSecsSinceEpoch() + 11644473600) * 10000000;
-
-    // 向下取整到最近的 5 分钟（5 分钟 = 3,000,000,000 * 100 纳秒）
-    ticks -= ticks % 3000000000;
-
-    // 将 ticks 和 TRUSTED_CLIENT_TOKEN 拼接后计算 SHA256 散列值
-    QString strToHash = QString::number(ticks) + TRUSTED_CLIENT_TOKEN;
-    QByteArray hash = QCryptographicHash::hash(strToHash.toUtf8(), QCryptographicHash::Sha256);
-
-    return hash.toHex().toUpper();
+    return QString::fromStdString(edge_tts_drm::generateSecMsGecV2(TRUSTED_CLIENT_TOKEN.toStdString()));
 }
 
 // 生成 Sec-MS-GEC-Version
 QString Communicate::generateSecMsGecVersion() {
-    return QString("1-%1").arg(CHROMIUM_FULL_VERSION);
+    return QString("2-%1").arg(CHROMIUM_FULL_VERSION);
 }
 
 Communicate::Communicate(QObject *parent)
@@ -45,7 +37,13 @@ Communicate::Communicate(QObject *parent)
     connect(&m_webSocket, &QWebSocket::binaryMessageReceived, this, &Communicate::onBinaryMessageReceived);
     connect(&m_webSocket, &QWebSocket::textMessageReceived, this, &Communicate::onTextMessageReceived);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &Communicate::onDisconnected);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 5, 0)
+    connect(&m_webSocket, &QWebSocket::errorOccurred, this, &Communicate::onSocketError);
+#else
+    connect(&m_webSocket, QOverload<QAbstractSocket::SocketError>::of(&QWebSocket::error), this, &Communicate::onSocketError);
+#endif
     connect(this, &Communicate::audioDataReceived, this, &Communicate::sendNextTextPart);
+    m_networkManager = new QNetworkAccessManager(this);
     connect(this, &Communicate::finished, [&]() {
         m_webSocket.close();
     });
@@ -183,6 +181,8 @@ void Communicate::start() {
     m_synthesisComplete = false;
     m_finishedEmitted = false;
     m_switchingPlaybackSource = false;
+    m_retryingAfterClockSkew = false;
+    m_clockSkewRetried = false;
     m_downloadAudio = false;
     m_textPartIndex = 0;
     m_audioOffset = 0;
@@ -202,10 +202,14 @@ void Communicate::start() {
     qsizetype defaultSize = scaleSize > minSize ? scaleSize : minSize;
     m_audioDataReceived.reserve(defaultSize);
 
-    // 添加 Sec-MS-GEC 和 Sec-MS-GEC-Version 参数
-    QUrl url(WSS_URL + "&Sec-MS-GEC=" + generateSecMsGecToken() +
-             "&Sec-MS-GEC-Version=" + generateSecMsGecVersion() +
-             "&ConnectionId=" + connect_id());
+    openWebSocket();
+}
+
+void Communicate::openWebSocket() {
+    // 添加 ConnectionId、Sec-MS-GEC 和 Sec-MS-GEC-Version 参数
+    QUrl url(WSS_URL + "&ConnectionId=" + connect_id() +
+             "&Sec-MS-GEC=" + generateSecMsGecToken() +
+             "&Sec-MS-GEC-Version=" + generateSecMsGecVersion());
 
     QNetworkRequest request(url);
 
@@ -220,6 +224,36 @@ void Communicate::start() {
 
     // 打开 WebSocket 连接
     m_webSocket.open(request);
+}
+
+void Communicate::onSocketError(QAbstractSocket::SocketError error) {
+    Q_UNUSED(error);
+    if (m_stopRequested || m_clockSkewRetried || m_retryingAfterClockSkew) {
+        return;
+    }
+
+    const QString errorString = m_webSocket.errorString();
+    if (!errorString.contains("403")) {
+        return;
+    }
+
+    m_retryingAfterClockSkew = true;
+    m_clockSkewRetried = true;
+    QNetworkReply *reply = m_networkManager->head(QNetworkRequest(QUrl("https://speech.platform.bing.com")));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        const QByteArray serverDate = reply->rawHeader("Date");
+        reply->deleteLater();
+        m_retryingAfterClockSkew = false;
+
+        if (m_stopRequested) {
+            return;
+        }
+        if (!serverDate.isEmpty() && edge_tts_drm::adjustClockSkewFromDate(serverDate.toStdString())) {
+            openWebSocket();
+        } else {
+            notifyFinishedOnce();
+        }
+    });
 }
 
 void Communicate::sendNextTextPart() {
@@ -418,8 +452,16 @@ void Communicate::tryStartOrContinuePlayback()
 }
 
 void Communicate::onDisconnected() {
+    if (m_retryingAfterClockSkew) {
+        return;
+    }
+
     if (!m_fileName.isEmpty()) {
-        save();
+        if (!m_stopRequested && !m_audioDataReceived.isEmpty()) {
+            save();
+        } else {
+            notifyFinishedOnce();
+        }
         return;
     }
 
@@ -450,7 +492,10 @@ QString Communicate::connect_id() {
 }
 
 QString Communicate::date_to_string() {
-    return QDateTime::currentDateTimeUtc().toString("ddd MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'");
+    return QLocale::c().toString(
+        QDateTime::currentDateTimeUtc(),
+        "ddd MMM dd yyyy HH:mm:ss 'GMT+0000 (Coordinated Universal Time)'"
+    );
 }
 
 QString Communicate::escape(QString data) {
@@ -491,14 +536,18 @@ QString Communicate::ssml_headers_plus_data(const QString& requestId, const QStr
 }
 
 QPair<QMap<QString, QString>, QString> Communicate::get_headers_and_data(const QString& message) {
-    auto parts = message.split("\r\n\r\n");
-    auto headers = parts[0].split("\r\n");
+    const int separatorIndex = message.indexOf("\r\n\r\n");
+    const QString headerPart = separatorIndex >= 0 ? message.left(separatorIndex) : message;
+    const QString bodyPart = separatorIndex >= 0 ? message.mid(separatorIndex + 4) : QString();
+    const auto headers = headerPart.split("\r\n", Qt::SkipEmptyParts);
     QMap<QString, QString> parameters;
     for (const auto& header : headers) {
-        auto key_value = header.split(":");
-        parameters[key_value[0].trimmed()] = key_value[1].trimmed();
+        const int colonIndex = header.indexOf(':');
+        if (colonIndex > 0) {
+            parameters[header.left(colonIndex).trimmed()] = header.mid(colonIndex + 1).trimmed();
+        }
     }
-    return qMakePair(parameters, parts[1]);
+    return qMakePair(parameters, bodyPart);
 }
 
 QString Communicate::generateMuid() {

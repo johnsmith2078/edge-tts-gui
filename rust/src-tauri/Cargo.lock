@@ -954,7 +954,6 @@ dependencies = [
  "rfd",
  "rustls",
  "serde",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",

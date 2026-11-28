@@ -10,12 +10,14 @@ CONFIG += c++17
 
 SOURCES += \
     communicate.cpp \
+    drm.cpp \
     main.cpp \
     dialog.cpp \
     streamingprogressbar.cpp
 
 HEADERS += \
     communicate.h \
+    drm.h \
     dialog.h \
     streamingprogressbar.h
 

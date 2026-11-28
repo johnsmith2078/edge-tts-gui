@@ -20,7 +20,6 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 rfd = "0.15"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1", features = ["derive"] }
-sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
