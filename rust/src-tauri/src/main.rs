@@ -5,7 +5,7 @@ use std::{
     process::Command,
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Once, OnceLock,
+        Mutex, Once, OnceLock,
     },
     thread,
     time::Duration,
@@ -67,26 +67,45 @@ static OCR_RESOURCES: &[OcrResource] = &[
     ocr_res!("models/ppocr_keys_v1.txt"),
 ];
 
+const OCR_READY_MARKER: &str = ".ocr-ready";
 static OCR_DIR: OnceLock<PathBuf> = OnceLock::new();
+static OCR_EXTRACT_LOCK: Mutex<()> = Mutex::new(());
 
 fn ocr_dir() -> &'static Path {
     OCR_DIR.get_or_init(|| std::env::temp_dir().join("edge-tts-gui-ocr"))
 }
 
-fn ensure_ocr_extracted() -> Result<(), String> {
-    let dir = ocr_dir();
-    if dir.join("win-BIN-CPU-x64").join("RapidOcrOnnx.exe").exists() {
+fn is_ocr_dir_ready(dir: &Path, resources: &[OcrResource]) -> bool {
+    dir.join(OCR_READY_MARKER).is_file()
+        && resources.iter().all(|r| {
+            std::fs::metadata(dir.join(r.path))
+                .map(|meta| meta.len() == r.bytes.len() as u64)
+                .unwrap_or(false)
+        })
+}
+
+fn extract_ocr_resources(dir: &Path, resources: &[OcrResource]) -> Result<(), String> {
+    if is_ocr_dir_ready(dir, resources) {
         return Ok(());
     }
     let _ = std::fs::remove_dir_all(dir);
-    for r in OCR_RESOURCES {
+    for r in resources {
         let dest = dir.join(r.path);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| format!("mkdir: {e}"))?;
         }
         std::fs::write(&dest, r.bytes).map_err(|e| format!("write {}: {e}", r.path))?;
     }
+    std::fs::write(dir.join(OCR_READY_MARKER), b"ok")
+        .map_err(|e| format!("write {OCR_READY_MARKER}: {e}"))?;
     Ok(())
+}
+
+fn ensure_ocr_extracted() -> Result<(), String> {
+    let _guard = OCR_EXTRACT_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    extract_ocr_resources(ocr_dir(), OCR_RESOURCES)
 }
 
 fn perform_ocr(image_bytes: &[u8], width: u32, height: u32) -> Result<String, String> {
@@ -928,6 +947,33 @@ mod tests {
         }
         assert!(user_jpg.exists());
         assert!(user_txt.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn extract_ocr_resources_recovers_from_partial_extraction() {
+        let dir = std::env::temp_dir().join(format!("edge-tts-ocr-extract-{}", Uuid::new_v4().simple()));
+        let resources = [
+            OcrResource { path: "win-BIN-CPU-x64/RapidOcrOnnx.exe", bytes: b"exe-bytes" },
+            OcrResource { path: "models/det.onnx", bytes: b"model-bytes" },
+        ];
+
+        let partial_exe = dir.join(resources[0].path);
+        std::fs::create_dir_all(partial_exe.parent().unwrap()).unwrap();
+        std::fs::write(&partial_exe, resources[0].bytes).unwrap();
+        assert!(!is_ocr_dir_ready(&dir, &resources));
+
+        extract_ocr_resources(&dir, &resources).unwrap();
+        assert!(is_ocr_dir_ready(&dir, &resources));
+        assert_eq!(std::fs::read(dir.join(resources[0].path)).unwrap(), resources[0].bytes);
+        assert_eq!(std::fs::read(dir.join(resources[1].path)).unwrap(), resources[1].bytes);
+
+        std::fs::write(dir.join(resources[1].path), b"x").unwrap();
+        assert!(!is_ocr_dir_ready(&dir, &resources));
+        extract_ocr_resources(&dir, &resources).unwrap();
+        assert!(is_ocr_dir_ready(&dir, &resources));
+        assert_eq!(std::fs::read(dir.join(resources[1].path)).unwrap(), resources[1].bytes);
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 
