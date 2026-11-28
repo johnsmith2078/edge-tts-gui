@@ -287,12 +287,16 @@ fn encode_hex_upper(bytes: &[u8]) -> String {
     out
 }
 
-fn current_unix_secs() -> Result<i64, String> {
+fn raw_unix_secs() -> Result<i64, String> {
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|err| err.to_string())?
         .as_secs() as i64;
-    Ok(secs + CLOCK_SKEW_SECS.load(Ordering::Relaxed))
+    Ok(secs)
+}
+
+fn current_unix_secs() -> Result<i64, String> {
+    Ok(raw_unix_secs()? + CLOCK_SKEW_SECS.load(Ordering::Relaxed))
 }
 
 pub fn parse_rfc2616_date(date: &str) -> Option<i64> {
@@ -304,8 +308,8 @@ pub fn parse_rfc2616_date(date: &str) -> Option<i64> {
 pub fn adjust_clock_skew_from_date(server_date: &str) -> Result<(), String> {
     let server_secs = parse_rfc2616_date(server_date)
         .ok_or_else(|| format!("无法解析服务端时间: {server_date}"))?;
-    let client_secs = current_unix_secs()?;
-    CLOCK_SKEW_SECS.fetch_add(server_secs - client_secs, Ordering::Relaxed);
+    let raw_secs = raw_unix_secs()?;
+    CLOCK_SKEW_SECS.store(server_secs - raw_secs, Ordering::Relaxed);
     Ok(())
 }
 
@@ -386,5 +390,16 @@ mod tests {
             parse_rfc2616_date("Sat, 28 Nov 2026 06:27:37 GMT"),
             Some(1_795_847_257)
         );
+    }
+
+    #[test]
+    fn adjust_clock_skew_is_idempotent_across_repeated_calls() {
+        CLOCK_SKEW_SECS.store(0, Ordering::Relaxed);
+        adjust_clock_skew_from_date("Sat, 28 Nov 2026 06:27:37 GMT").unwrap();
+        let first = CLOCK_SKEW_SECS.load(Ordering::Relaxed);
+        adjust_clock_skew_from_date("Sat, 28 Nov 2026 06:27:37 GMT").unwrap();
+        let second = CLOCK_SKEW_SECS.load(Ordering::Relaxed);
+        assert!((first - second).abs() <= 1, "skew should not double: first={first}, second={second}");
+        CLOCK_SKEW_SECS.store(0, Ordering::Relaxed);
     }
 }
