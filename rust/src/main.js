@@ -183,9 +183,11 @@ async function playText(text = content.value) {
 }
 
 async function saveText() {
+  if (saveButton.disabled) return;
   const text = content.value.trim();
   if (!text) return;
 
+  stopAudio();
   const currentJob = nextJob();
   setBusy(true, "保存中...");
   setProgress(1);
@@ -211,11 +213,11 @@ content.addEventListener("input", updateCount);
 content.addEventListener("keydown", (event) => {
   if (event.ctrlKey && event.key === "Enter") {
     event.preventDefault();
-    playText();
+    if (!playButton.disabled) playText();
   }
   if (event.ctrlKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
-    saveText();
+    if (!saveButton.disabled) saveText();
   }
 });
 
