@@ -53,12 +53,16 @@ function activeVoiceCode() {
   return selected?.dataset.code || "zh-CN, XiaoyiNeural";
 }
 
+function syncPresetButtons(code = activeVoiceCode()) {
+  presets.forEach((button) => button.classList.toggle("active", button.dataset.code === code));
+}
+
 function setVoiceCode(code) {
   const item = voices.find((v) => v.code === code);
   if (!item) return;
   language.value = item.language;
   fillVoiceSelect(item.language, item.code);
-  presets.forEach((button) => button.classList.toggle("active", button.dataset.code === code));
+  syncPresetButtons(item.code);
 }
 
 function fillLanguageSelect() {
@@ -76,6 +80,7 @@ function fillVoiceSelect(languageName, selectedCode) {
       return option;
     }),
   );
+  syncPresetButtons();
 }
 
 function updateCount() {
@@ -233,10 +238,7 @@ document.addEventListener("drop", (event) => {
 });
 
 language.addEventListener("change", () => fillVoiceSelect(language.value));
-voice.addEventListener("change", () => {
-  const code = activeVoiceCode();
-  presets.forEach((button) => button.classList.toggle("active", button.dataset.code === code));
-});
+voice.addEventListener("change", () => syncPresetButtons());
 presets.forEach((button) => button.addEventListener("click", () => setVoiceCode(button.dataset.code)));
 
 playButton.addEventListener("click", () => playText());
