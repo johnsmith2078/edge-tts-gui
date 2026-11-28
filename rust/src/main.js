@@ -19,6 +19,8 @@ const middleMouseToggle = document.querySelector("#middle-mouse-toggle");
 const presets = [...document.querySelectorAll(".preset")];
 
 const MIDDLE_MOUSE_STORAGE_KEY = "middleMouseReadoutEnabled";
+const MAX_DROP_FILE_BYTES = 2 * 1024 * 1024;
+const TEXT_FILE_EXT = /\.(txt|md|markdown|csv|tsv|json|xml|log|srt|lrc|vtt|ini|yaml|yml)$/i;
 
 let voices = [];
 let audio = null;
@@ -226,15 +228,32 @@ content.addEventListener("keydown", (event) => {
   }
 });
 
+function isSupportedTextFile(file) {
+  return file.type.startsWith("text/") || TEXT_FILE_EXT.test(file.name);
+}
+
 document.addEventListener("dragover", (event) => event.preventDefault());
 document.addEventListener("drop", (event) => {
   event.preventDefault();
   const file = event.dataTransfer?.files?.[0];
   if (!file) return;
-  file.text().then((text) => {
-    content.value = text;
-    updateCount();
-  });
+  if (file.size > MAX_DROP_FILE_BYTES) {
+    statusText.textContent = "仅支持小于 2MB 的文本文件";
+    return;
+  }
+  if (!isSupportedTextFile(file)) {
+    statusText.textContent = "仅支持拖入纯文本文件";
+    return;
+  }
+  file
+    .text()
+    .then((text) => {
+      content.value = text;
+      updateCount();
+    })
+    .catch(() => {
+      statusText.textContent = "读取文件失败";
+    });
 });
 
 language.addEventListener("change", () => fillVoiceSelect(language.value));
