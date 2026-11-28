@@ -262,22 +262,19 @@ async fn save_audio(
     Ok(Some(path.display().to_string()))
 }
 
-async fn synthesize(
-    text: &str,
+async fn synthesize_parts<F>(
+    parts: &[String],
     voice: &str,
     job_id: u64,
     state: &AppState,
     app: Option<&tauri::AppHandle>,
-) -> Result<Vec<u8>, String> {
+    mut on_turn_audio: F,
+) -> Result<(), String>
+where
+    F: FnMut(&[u8]) -> Result<(), String>,
+{
     init_tls();
     ensure_current(state, job_id)?;
-
-    let clean = escape_xml(&remove_incompatible_characters(text));
-    let parts = if app.is_some() {
-        split_text_by_byte_length(&clean, MAX_TEXT_BYTES)
-    } else {
-        split_text_for_playback(&clean, INITIAL_TEXT_BYTES, TARGET_TEXT_BYTES)
-    };
     if parts.is_empty() {
         return Err("文本为空".into());
     }
@@ -285,8 +282,7 @@ async fn synthesize(
     let socket = connect_tts_socket().await?;
     let (mut write, mut read) = socket.split();
 
-    let mut audio = Vec::with_capacity(text.len().max(1024) * 128);
-    let mut part_start = 0;
+    let mut current_chunk = Vec::new();
     let mut index = 0usize;
     let mut downloading = false;
     send_text_part(&mut write, &parts[index], voice).await?;
@@ -301,7 +297,7 @@ async fn synthesize(
                 }
                 let data = parse_audio_message(&message)?;
                 if !data.is_empty() {
-                    audio.extend_from_slice(data);
+                    current_chunk.extend_from_slice(data);
                     emit_progress(app, job_id, half_progress(index, parts.len()));
                 }
             }
@@ -310,10 +306,11 @@ async fn synthesize(
                 match headers.get("Path").map(String::as_str) {
                     Some("turn.start") => downloading = true,
                     Some("turn.end") => {
-                        if audio.len() == part_start {
+                        if current_chunk.is_empty() {
                             return Err("未收到音频数据".into());
                         }
-                        part_start = audio.len();
+                        on_turn_audio(&current_chunk)?;
+                        current_chunk.clear();
                         downloading = false;
                         index += 1;
                         emit_progress(app, job_id, full_progress(index, parts.len()));
@@ -334,6 +331,28 @@ async fn synthesize(
     if index < parts.len() {
         return Err("语音服务在合成完成前断开了连接".into());
     }
+    Ok(())
+}
+
+async fn synthesize(
+    text: &str,
+    voice: &str,
+    job_id: u64,
+    state: &AppState,
+    app: Option<&tauri::AppHandle>,
+) -> Result<Vec<u8>, String> {
+    let clean = escape_xml(&remove_incompatible_characters(text));
+    let parts = if app.is_some() {
+        split_text_by_byte_length(&clean, MAX_TEXT_BYTES)
+    } else {
+        split_text_for_playback(&clean, INITIAL_TEXT_BYTES, TARGET_TEXT_BYTES)
+    };
+    let mut audio = Vec::with_capacity(text.len().max(1024) * 128);
+    synthesize_parts(&parts, voice, job_id, state, app, |chunk| {
+        audio.extend_from_slice(chunk);
+        Ok(())
+    })
+    .await?;
     emit_progress(app, job_id, 100);
     Ok(audio)
 }
@@ -345,66 +364,20 @@ async fn synthesize_streaming(
     app: &tauri::AppHandle,
 ) -> Result<(), String> {
     use base64::Engine;
-    init_tls();
     let state = app.state::<AppState>();
-    ensure_current(&state, job_id)?;
-
     let clean = escape_xml(&remove_incompatible_characters(text));
     let parts = split_text_for_playback(&clean, INITIAL_TEXT_BYTES, TARGET_TEXT_BYTES);
-    if parts.is_empty() {
-        return Err("文本为空".into());
-    }
-    let total = parts.len();
-
-    let socket = connect_tts_socket().await?;
-    let (mut write, mut read) = socket.split();
-
-    let mut current_chunk = Vec::new();
-    let mut index = 0usize;
-    let mut downloading = false;
-    send_text_part(&mut write, &parts[index], voice).await?;
-    let _ = app.emit("save-progress", ProgressPayload { job_id, percent: 1 });
-
-    while let Some(message) = read.next().await {
-        ensure_current(&state, job_id)?;
-        match message.map_err(to_string)? {
-            Message::Binary(message) => {
-                if !downloading {
-                    return Err("收到意外音频数据".into());
-                }
-                current_chunk.extend_from_slice(parse_audio_message(&message)?);
-            }
-            Message::Text(message) => {
-                let headers = parse_headers(&message);
-                match headers.get("Path").map(String::as_str) {
-                    Some("turn.start") => downloading = true,
-                    Some("turn.end") => {
-                        if current_chunk.is_empty() {
-                            return Err("未收到音频数据".into());
-                        }
-                        downloading = false;
-                        let b64 = base64::engine::general_purpose::STANDARD.encode(&current_chunk);
-                        app.emit("playback-chunk", PlaybackChunkPayload {
-                            job_id,
-                            audio_base64: b64,
-                        }).map_err(to_string)?;
-                        current_chunk.clear();
-                        index += 1;
-                        emit_progress(Some(app), job_id, full_progress(index, total));
-                        if index == total {
-                            return app.emit("playback-done", PlaybackDonePayload { job_id }).map_err(to_string);
-                        }
-                        send_text_part(&mut write, &parts[index], voice).await?;
-                    }
-                    Some("audio.metadata" | "response") => {}
-                    _ => return Err(format!("无法识别服务响应: {message}")),
-                }
-            }
-            Message::Close(_) => break,
-            _ => {}
-        }
-    }
-    Err("语音服务在合成完成前断开了连接".into())
+    synthesize_parts(&parts, voice, job_id, &state, Some(app), |chunk| {
+        let b64 = base64::engine::general_purpose::STANDARD.encode(chunk);
+        app.emit("playback-chunk", PlaybackChunkPayload {
+            job_id,
+            audio_base64: b64,
+        })
+        .map_err(to_string)
+    })
+    .await?;
+    app.emit("playback-done", PlaybackDonePayload { job_id })
+        .map_err(to_string)
 }
 
 async fn send_text_part<W>(write: &mut W, part: &str, voice: &str) -> Result<(), String>
